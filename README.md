@@ -63,3 +63,50 @@ docker-compose down
     ├── .gitignore          # Gitの無視リスト
     ├── docker-compose.yml  # Dockerコンテナの定義ファイル
     └── README.md           # このファイル
+
+## 🛠 Docker + Git 作業フロー
+
+このセクションでは、**Dockerコンテナを使った開発環境**での作業と、**Gitでのローカル・リモート同期**の手順をまとめています。
+
+### 1. 作業開始前にリモートの変更を取り込む
+他の開発者の変更がある場合、作業前に最新状態にします。
+
+```bash
+# リモートの最新情報を取得
+git fetch origin
+
+# ローカルブランチにマージ
+git merge origin/<ブランチ名>
+
+# もしくは pull で一括取得＆マージ
+git pull origin <ブランチ名>
+```
+### 2. Dockerコンテナを起動して作業
+```bash
+# フォアグラウンドで起動（ログ確認用）
+docker-compose up --build
+
+# バックグラウンドで起動（推奨）
+docker-compose up -d --build
+```
+
+### 3. ローカルで変更した場合
+```bash
+# 変更内容の確認
+git status
+
+# 変更ファイルをステージに追加
+git add <ファイル名>  # 個別
+git add .             # 全て
+
+# コミット（ローカルに保存）
+git commit -m "変更内容の説明"
+
+# リモートに反映
+git push origin <ブランチ名>
+```
+### 4. 作業終了時
+```bash
+# コンテナを停止
+docker-compose down
+```
