@@ -34,5 +34,16 @@ services:
     ports:
       - "5432:5432"
 
+  notebook:
+    build:
+      context: ./notebook
+    volumes:
+      # notebookディレクトリを作業場所としてマウント
+      - ./notebook:/home/jovyan/work
+      # 分析用データをマウント
+      - ./data:/home/jovyan/data
+    ports:
+      - "8888:8888"
+
 volumes:
   postgres_data:

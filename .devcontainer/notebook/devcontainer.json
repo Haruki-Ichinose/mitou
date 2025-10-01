@@ -1,0 +1,17 @@
+// ./.devcontainer/notebook/devcontainer.json
+{
+    "name": "Data Analysis (Notebook)",
+    "dockerComposeFile": [
+        "../../docker-compose.yml"
+    ],
+    "service": "notebook",
+    "workspaceFolder": "/home/jovyan/work",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-toolsai.jupyter"
+            ]
+        }
+    }
+}

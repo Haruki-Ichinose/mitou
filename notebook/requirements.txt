@@ -1,0 +1,11 @@
+# notebook/requirements.txt
+
+pandas
+numpy
+scipy
+scikit-learn
+xgboost
+shap
+calplot
+Pillow
+japanize_matplotlib

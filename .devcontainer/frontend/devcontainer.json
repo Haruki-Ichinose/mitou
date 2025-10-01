@@ -1,0 +1,19 @@
+// ./.devcontainer/frontend/devcontainer.json
+{
+    "name": "Frontend Development (React)",
+    "dockerComposeFile": [
+        "../../docker-compose.yml"
+    ],
+    "service": "frontend",
+    "workspaceFolder": "/app",
+    "customizations": {
+        "vscode": {
+            // フロントエンド開発で推奨されるVSCode拡張機能
+            "extensions": [
+                "dbaeumer.vscode-eslint", // ESLint
+                "esbenp.prettier-vscode", // Prettier
+                "styled-components.vscode-styled-components" // CSS-in-JSのシンタックスハイライトなど
+            ]
+        }
+    }
+}
