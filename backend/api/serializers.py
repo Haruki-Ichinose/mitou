@@ -1,7 +1,19 @@
 from rest_framework import serializers
-from .models import Player
+from .models import DailyTrainingLoad
 
-class PlayerSerializer(serializers.ModelSerializer):
+
+class DailyTrainingLoadSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Player
-        fields = ('id', 'name', 'age', 'position')
+        model = DailyTrainingLoad
+        fields = (
+            'id',
+            'athlete_id',
+            'date',
+            'total_distance',
+            'acwr',
+        )
+
+
+class TrainingDataIngestionRequestSerializer(serializers.Serializer):
+    filename = serializers.CharField()
+    dry_run = serializers.BooleanField(default=False)

@@ -1,9 +1,17 @@
 from django.db import models
 
-class Player(models.Model):
-    name = models.CharField(max_length=100)
-    age = models.IntegerField()
-    position = models.CharField(max_length=50)
+class DailyTrainingLoad(models.Model):
+    athlete_id = models.CharField(max_length=50)
+    date = models.DateField()
+    total_distance = models.FloatField()
+    acwr = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('athlete_id', 'date')
+        ordering = ['athlete_id', 'date']
+        indexes = [
+            models.Index(fields=['athlete_id', 'date']),
+        ]
 
     def __str__(self):
-        return self.name
+        return f'{self.athlete_id} @ {self.date}: {self.total_distance}'

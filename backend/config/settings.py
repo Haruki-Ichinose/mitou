@@ -134,3 +134,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
+
+# Directory for training CSV files in data ingestion workflows
+TRAINING_DATA_DIR = Path(os.environ.get('TRAINING_DATA_DIR', BASE_DIR / 'data'))
