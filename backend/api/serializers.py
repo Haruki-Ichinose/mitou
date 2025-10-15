@@ -8,6 +8,7 @@ class DailyTrainingLoadSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'athlete_id',
+            'athlete_name',
             'date',
             'total_distance',
             'acwr',

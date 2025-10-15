@@ -2,6 +2,7 @@ from django.db import models
 
 class DailyTrainingLoad(models.Model):
     athlete_id = models.CharField(max_length=50)
+    athlete_name = models.CharField(max_length=100)
     date = models.DateField()
     total_distance = models.FloatField()
     acwr = models.FloatField(null=True, blank=True)
