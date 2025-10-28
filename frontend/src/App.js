@@ -1,5 +1,5 @@
 // frontend/src/App.js
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import './App.css';
 
@@ -14,37 +14,65 @@ function App() {
   const [error, setError] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
 
-  useEffect(() => {
-    let isMounted = true;
+  const fetchTrainingLoads = useCallback(async () => {
+    const response = await axios.get(`${API_BASE_URL}/daily-training-loads/`);
+    return Array.isArray(response.data) ? response.data : [];
+  }, []);
 
-    async function loadTrainingLoads() {
+  const parseErrorMessage = useCallback((err) => {
+    if (err?.response?.data?.detail) {
+      return err.response.data.detail;
+    }
+    if (err?.message) {
+      return err.message;
+    }
+    return 'データの取得に失敗しました。時間をおいて再度お試しください。';
+  }, []);
+
+  const refreshRecords = useCallback(async () => {
+    setStatus('loading');
+    setError('');
+    try {
+      const data = await fetchTrainingLoads();
+      setRecords(data);
+      setStatus('loaded');
+      return data;
+    } catch (err) {
+      const message = parseErrorMessage(err);
+      setError(message);
+      setStatus('error');
+      throw err;
+    }
+  }, [fetchTrainingLoads, parseErrorMessage]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
       setStatus('loading');
       setError('');
-
       try {
-        const response = await axios.get(`${API_BASE_URL}/daily-training-loads/`);
-        if (!isMounted) {
+        const data = await fetchTrainingLoads();
+        if (cancelled) {
           return;
         }
-        setRecords(Array.isArray(response.data) ? response.data : []);
+        setRecords(data);
         setStatus('loaded');
       } catch (err) {
-        if (!isMounted) {
+        if (cancelled) {
           return;
         }
-        const message =
-          err.response?.data?.detail ||
-          'データの取得に失敗しました。時間をおいて再度お試しください。';
+        const message = parseErrorMessage(err);
         setError(message);
         setStatus('error');
       }
-    }
-
-    loadTrainingLoads();
-    return () => {
-      isMounted = false;
     };
-  }, []);
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchTrainingLoads, parseErrorMessage]);
 
   const players = useMemo(() => {
     const map = new Map();
@@ -146,7 +174,8 @@ function App() {
   }, [selectedRecords, latestRecord]);
 
   const handleCsvUpload = () => {
-    window.alert('現時点では未実装です');
+    setSelectedAthleteId(null);
+    setView('upload');
   };
 
   const handleSelectPlayer = (athleteId) => {
@@ -170,6 +199,22 @@ function App() {
           status={status}
           error={error}
           onSelectPlayer={handleSelectPlayer}
+        />
+      )}
+
+      {view === 'upload' && (
+        <CsvUploadView
+          onBack={() => {
+            setView('home');
+          }}
+          onSuccess={async () => {
+            await refreshRecords();
+          }}
+          onNavigateToOverview={() => {
+            setSelectedAthleteId(null);
+            setView('overview');
+          }}
+          parseErrorMessage={parseErrorMessage}
         />
       )}
 
@@ -246,6 +291,178 @@ function OverviewView({ onBack, players, status, error, onSelectPlayer }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function CsvUploadView({
+  onBack,
+  onSuccess,
+  onNavigateToOverview,
+  parseErrorMessage,
+}) {
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const [summary, setSummary] = useState(null);
+
+  const handleFileChange = (event) => {
+    const nextFile = event.target?.files?.[0] || null;
+    setFile(nextFile);
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!file) {
+      setError('CSVファイルを選択してください。');
+      return;
+    }
+
+    setUploading(true);
+    setError('');
+    setSummary(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await axios.post(
+        `${API_BASE_URL}/ingest/training-load/`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      setSummary(response.data);
+      if (onSuccess) {
+        await onSuccess();
+      }
+    } catch (err) {
+      const message =
+        (parseErrorMessage && parseErrorMessage(err)) ||
+        'CSVのアップロードに失敗しました。';
+      setError(message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleReset = () => {
+    if (uploading) {
+      return;
+    }
+    setFile(null);
+    setError('');
+    setSummary(null);
+  };
+
+  const summaryItems = summary
+    ? [
+        { label: 'ファイルパス', value: summary.file_path || '-' },
+        { label: '読込行数', value: summary.rows_read },
+        { label: '有効行数', value: summary.rows_valid },
+        { label: '選手数', value: summary.players_processed },
+        { label: '日数', value: summary.days_processed },
+        { label: '新規作成', value: summary.created },
+        { label: '更新', value: summary.updated },
+        {
+          label: '除外されたathlete_id',
+          value:
+            summary.excluded_athlete_ids && summary.excluded_athlete_ids.length
+              ? summary.excluded_athlete_ids.join(', ')
+              : 'なし',
+        },
+      ]
+    : [];
+
+  return (
+    <div className="view-card upload-view">
+      <header className="view-header">
+        <button
+          type="button"
+          className="link-button"
+          onClick={onBack}
+          disabled={uploading}
+        >
+          ← ホームに戻る
+        </button>
+        <h1>CSVアップロード</h1>
+        <p>トレーニングデータCSVを取り込んでACWRを更新します。</p>
+      </header>
+
+      <form className="upload-form" onSubmit={handleSubmit}>
+        <div className="upload-field">
+          <label htmlFor="csv-file">CSVファイル</label>
+          <input
+            id="csv-file"
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleFileChange}
+            disabled={uploading}
+          />
+          {file && (
+            <p className="upload-file-info">
+              選択済み: <span>{file.name}</span>
+            </p>
+          )}
+        </div>
+
+        <div className="upload-actions">
+          <button
+            type="submit"
+            className="upload-button upload-button--primary"
+            disabled={uploading || !file}
+          >
+            {uploading ? 'アップロード中…' : 'アップロード'}
+          </button>
+          <button
+            type="button"
+            className="upload-button upload-button--secondary"
+            onClick={handleReset}
+            disabled={uploading}
+          >
+            クリア
+          </button>
+        </div>
+
+        {error && <p className="error-banner">{error}</p>}
+      </form>
+
+      {summary && (
+        <div className="upload-summary">
+          <h2>取込結果</h2>
+          <dl>
+            {summaryItems.map((item) => (
+              <div key={item.label} className="upload-summary__row">
+                <dt>{item.label}</dt>
+                <dd>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <div className="upload-summary__actions">
+            <button
+              type="button"
+              className="upload-button upload-button--primary"
+              onClick={onNavigateToOverview}
+              disabled={uploading}
+            >
+              選手一覧を確認
+            </button>
+            <button
+              type="button"
+              className="upload-button upload-button--secondary"
+              onClick={handleReset}
+              disabled={uploading}
+            >
+              別のファイルを選択
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
