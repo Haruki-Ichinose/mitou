@@ -1,49 +1,42 @@
+version: '3.9'
+
 services:
-  backend:
+  app:
+    container_name: mitou-app
     build:
-      context: ./backend
-    command: >
-      sh -c "/app/wait-for-it.sh db && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+      context: .
+      dockerfile: .devcontainer/Dockerfile
     volumes:
-      - ./backend:/app
+      - .:/workspace
+      - ./data:/workspace/data
     ports:
       - "8000:8000"
+      - "8888:8888"
+      - "3000:3000"
     env_file:
       - .env
     depends_on:
       - db
+    command: >
+      sh -c "
+        cd frontend && npm install && npm start &
 
-  frontend:
-    build:
-      context: ./frontend
-    command: npm start
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
+        jupyter lab --ip=0.0.0.0 --allow-root --NotebookApp.token='' &
+
+        wait-for-it db:5432 -- \
+          python backend/manage.py migrate &&
+          python backend/manage.py runserver 0.0.0.0:8000
+      "
 
   db:
+    container_name: mitou-db
     image: postgres:17-alpine
     volumes:
-      - postgres_data:/var/lib/postgresql/data/
+      - postgres_data:/var/lib/postgresql/data
     env_file:
       - .env
     ports:
       - "5432:5432"
-
-  notebook:
-    build:
-      context: ./notebook
-    volumes:
-      # notebookディレクトリを作業場所としてマウント
-      - ./notebook:/home/jovyan/work
-      # 分析用データをマウント
-      - ./data:/home/jovyan/data
-    ports:
-      - "8888:8888"
 
 volumes:
   postgres_data:

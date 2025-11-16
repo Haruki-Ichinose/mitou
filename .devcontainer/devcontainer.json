@@ -1,0 +1,20 @@
+{
+  "name": "mitou",
+  "dockerComposeFile": [
+    "../docker-compose.yml"
+  ],
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "batisteo.vscode-django"
+      ]
+    }
+  },
+  "postCreateCommand": "npm --version && python --version"
+}
