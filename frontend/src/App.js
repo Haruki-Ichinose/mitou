@@ -14,11 +14,13 @@ function App() {
   const [error, setError] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
 
+  /*バックエンドからデータを取得*/
   const fetchTrainingLoads = useCallback(async () => {
     const response = await axios.get(`${API_BASE_URL}/daily-training-loads/`);
     return Array.isArray(response.data) ? response.data : [];
   }, []);
 
+  /*エラーメッセージの解析*/
   const parseErrorMessage = useCallback((err) => {
     if (err?.response?.data?.detail) {
       return err.response.data.detail;
@@ -29,6 +31,7 @@ function App() {
     return 'データの取得に失敗しました。時間をおいて再度お試しください。';
   }, []);
 
+  /*データの更新*/
   const refreshRecords = useCallback(async () => {
     setStatus('loading');
     setError('');
@@ -45,6 +48,7 @@ function App() {
     }
   }, [fetchTrainingLoads, parseErrorMessage]);
 
+  /*初回データ読込*/
   useEffect(() => {
     let cancelled = false;
 
@@ -74,6 +78,7 @@ function App() {
     };
   }, [fetchTrainingLoads, parseErrorMessage]);
 
+  /*画面表示用に整理された選手リスト作成*/
   const players = useMemo(() => {
     const map = new Map();
     records.forEach((record) => {
@@ -130,6 +135,7 @@ function App() {
       }));
   }, [records]);
 
+  /*選択された選手の記録を日付順に整理*/
   const selectedRecords = useMemo(() => {
     if (!selectedAthleteId) {
       return [];
@@ -144,6 +150,7 @@ function App() {
       .sort((a, b) => a.dateObj - b.dateObj);
   }, [records, selectedAthleteId]);
 
+  /*選択された選手の最新の記録を取得*/
   const latestRecord = useMemo(() => {
     if (selectedRecords.length === 0) {
       return null;
@@ -151,6 +158,7 @@ function App() {
     return selectedRecords[selectedRecords.length - 1];
   }, [selectedRecords]);
 
+  /*選択された選手の過去1ヶ月のACWRデータを抽出*/
   const chartData = useMemo(() => {
     if (!latestRecord) {
       return [];
@@ -173,17 +181,20 @@ function App() {
       }));
   }, [selectedRecords, latestRecord]);
 
+  /*CSVアップロード画面へ遷移*/
   const handleCsvUpload = () => {
     setSelectedAthleteId(null);
     setView('upload');
   };
 
+  /*選手選択ハンドラ（各選手の詳細画面へ遷移）*/
   const handleSelectPlayer = (athleteId) => {
     setSelectedAthleteId(String(athleteId));
     setView('detail');
   };
 
   return (
+    /*アプリ全体の「画面ルーター」*/
     <div className="app">
       {view === 'home' && (
         <HomeView
@@ -306,11 +317,13 @@ function CsvUploadView({
   const [error, setError] = useState('');
   const [summary, setSummary] = useState(null);
 
+  /*選択されたファイルの変更*/
   const handleFileChange = (event) => {
     const nextFile = event.target?.files?.[0] || null;
     setFile(nextFile);
   };
 
+  /*CSVファイルのアップロード処理*/
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!file) {
@@ -350,6 +363,7 @@ function CsvUploadView({
     }
   };
 
+  /*フォームのリセット処理*/
   const handleReset = () => {
     if (uploading) {
       return;
@@ -359,6 +373,7 @@ function CsvUploadView({
     setSummary(null);
   };
 
+  /*アップロード結果のサマリー項目作成*/
   const summaryItems = summary
     ? [
         { label: 'ファイルパス', value: summary.file_path || '-' },
@@ -477,9 +492,11 @@ function AthleteDetailView({
   status,
   error,
 }) {
+  /*選択された選手情報の取得*/
   const selectedPlayer = players.find(
     (player) => String(player.id) === String(selectedAthleteId)
   );
+  /*グラフ縦軸の最大値計算（2を超えるかどうか）*/
   const chartMetrics = useMemo(() => {
     const numeric = chartData.filter(
       (point) => typeof point.acwr === 'number' && !Number.isNaN(point.acwr)
