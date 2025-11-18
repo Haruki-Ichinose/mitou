@@ -5,6 +5,11 @@
   ],
   "service": "app",
   "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
