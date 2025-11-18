@@ -11,6 +11,19 @@ POSTGRES_PASSWORD=password
 # Django Application Settings
 SECRET_KEY=django-insecure-a-very-secret-key-for-dev
 DEBUG=True
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+```
+
+`DJANGO_ALLOWED_HOSTS` と `CORS_ALLOWED_ORIGINS` はカンマ区切りで指定できます。Preview 環境や Codespaces の URL が変わる場合は、それぞれの値を追加してください。
+
+### フロントエンド依存関係のインストール
+
+`honcho start` で React 開発サーバーを起動する前に、以下を 1 度実行して `node_modules` を作成してください。
+
+```bash
+cd frontend
+npm install
 ```
 
 ### Gitブランチ戦略

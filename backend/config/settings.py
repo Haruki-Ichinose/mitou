@@ -9,10 +9,18 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
-import os 
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
+
+
+def get_csv_env(setting_name: str, default: list[str]) -> list[str]:
+    """Return a comma-separated environment variable as a cleaned list."""
+    value = os.environ.get(setting_name)
+    if not value:
+        return default.copy()
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,7 +35,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = get_csv_env("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1"])
 
 
 # Application definition
@@ -131,9 +139,7 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
+CORS_ALLOWED_ORIGINS = get_csv_env("CORS_ALLOWED_ORIGINS", ["http://localhost:3000"])
 
 # Directory for training CSV files in data ingestion workflows
 TRAINING_DATA_DIR = Path(os.environ.get('TRAINING_DATA_DIR', BASE_DIR / 'data'))
