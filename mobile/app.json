@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "ACWR Mobile",
+    "slug": "acwr-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "acwrmobile",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.anonymous.acwr-mobile"
+    },
+    "android": {
+      "package": "com.anonymous.acwrmobile"
+    }
+  }
+}
