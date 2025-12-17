@@ -26,6 +26,22 @@ cd frontend
 npm install
 ```
 
+### モバイルアプリ (React Native / Expo Dev Client)
+
+選手本人向けのスマホアプリを `mobile/` に追加しました。既存APIを利用し、選手ID/名前で絞り込んだACWR推移のみを表示します。Expo Go は使わず、開発ビルドで動かします。
+
+```bash
+cd mobile
+npm install
+echo "EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api" > .env  # シミュレーターからMacのAPIを叩く場合
+npx expo prebuild --clean
+cd ios && pod install --repo-update && cd ..
+npx expo run:ios
+npx expo start --dev-client --clear   # JSバンドラ（別ターミナル）
+```
+
+実機で叩く場合は `.env` を `http://<MacのLAN IP>:8000/api` に変更してください。詳細は `mobile/README.md` を参照してください。
+
 ### Gitブランチ戦略
 
 新しい機能開発やバグ修正を行う際は、必ず新しいブランチを作成してください。
