@@ -1,7 +1,5 @@
-from datetime import date, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-import uuid
 
 from django.conf import settings
 from rest_framework import status, viewsets
@@ -9,7 +7,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import DailyMetric, DailyTrainingLoad
+from .models import DailyTrainingLoad
 from .serializers import DailyTrainingLoadSerializer, TrainingDataIngestionRequestSerializer
 from .services import CSVIngestionError, ingest_training_load_from_csv
 
@@ -87,64 +85,3 @@ class LatestTrainingLoadView(APIView):
 
         serializer = DailyTrainingLoadSerializer(latest_record)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-class DailyMetricsView(APIView):
-    def get(self, request):
-        athlete_id = request.query_params.get('athlete_id')
-        if not athlete_id:
-            return Response(
-                {'detail': 'athlete_id is required.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            athlete_uuid = uuid.UUID(str(athlete_id))
-        except ValueError:
-            return Response(
-                {'detail': 'athlete_id must be a valid UUID.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        since_str = request.query_params.get('since')
-        until_str = request.query_params.get('until')
-        try:
-            since = date.fromisoformat(since_str) if since_str else None
-        except ValueError:
-            return Response(
-                {'detail': 'since must be YYYY-MM-DD.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            until = date.fromisoformat(until_str) if until_str else None
-        except ValueError:
-            return Response(
-                {'detail': 'until must be YYYY-MM-DD.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if since and not until:
-            until = date.today()
-        if until and not since:
-            since = until - timedelta(days=30)
-
-        queryset = DailyMetric.objects.filter(athlete_id=athlete_uuid)
-        if since:
-            queryset = queryset.filter(date__gte=since)
-        if until:
-            queryset = queryset.filter(date__lte=until)
-        queryset = queryset.order_by('date')
-
-        grouped: dict[date, dict] = {}
-        for metric in queryset:
-            metrics = grouped.setdefault(metric.date, {})
-            metrics[metric.metric_name] = metric.value
-
-        response = [
-            {
-                'athlete_id': str(athlete_uuid),
-                'date': metric_date.isoformat(),
-                'metrics': metrics,
-            }
-            for metric_date, metrics in sorted(grouped.items())
-        ]
-        return Response(response, status=status.HTTP_200_OK)
