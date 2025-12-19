@@ -55,3 +55,8 @@ docker-compose.override.yml
 
 # generated data (local only)
 data/
+
+# notebooks noise
+notebooks/log/
+notebooks/test.ipynb
+notebooks/.ipynb_checkpoints/
