@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'api.apps.ApiConfig',
+    'workload.apps.WorkloadConfig',
 ]
 
 MIDDLEWARE = [
