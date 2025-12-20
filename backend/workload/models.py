@@ -41,10 +41,7 @@ class GpsSessionRaw(models.Model):
     upload = models.ForeignKey(DataUpload, on_delete=models.PROTECT, related_name="raw_rows")
     row_number = models.IntegerField()
     athlete = models.ForeignKey(Athlete, on_delete=models.PROTECT, related_name="raw_sessions")
-
-    # Pythonフィールド名は date、DB列名だけ date_ にする
     date = models.DateField(null=True, blank=True, db_column="date_")
-
     session_name = models.CharField(max_length=255, blank=True, default="")
     raw_payload = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -53,7 +50,7 @@ class GpsSessionRaw(models.Model):
         db_table = "gps_sessions_raw"
         indexes = [
             models.Index(fields=["upload"]),
-            models.Index(fields=["athlete", "date"]),  # ← date_ じゃなく date
+            models.Index(fields=["athlete", "date"]),
         ]
 
     def __str__(self):
@@ -62,15 +59,27 @@ class GpsSessionRaw(models.Model):
 
 class GpsDaily(models.Model):
     athlete = models.ForeignKey(Athlete, on_delete=models.PROTECT, related_name="daily")
-    date = models.DateField(db_column="date_")  # Python側は date
+    date = models.DateField(db_column="date_")
 
     is_match_day = models.BooleanField(default=False)
     md_offset = models.IntegerField(null=True, blank=True)
     md_phase = models.CharField(max_length=20, blank=True, default="")
 
-    total_distance = models.FloatField(null=True, blank=True)
-    total_player_load = models.FloatField(null=True, blank=True)
+    # === Main Metrics (FP & GK) ===
+    total_distance = models.FloatField(null=True, blank=True, default=0)
+    total_player_load = models.FloatField(null=True, blank=True, default=0)
+    
+    # FP Specific
+    hsr_distance = models.FloatField(null=True, blank=True, default=0)
+    ima_total = models.FloatField(null=True, blank=True, default=0)
+    ima_asymmetry = models.FloatField(null=True, blank=True)
 
+    # GK Specific
+    total_dive_load = models.FloatField(null=True, blank=True, default=0)
+    total_jumps = models.FloatField(null=True, blank=True, default=0)
+    dive_asymmetry = models.FloatField(null=True, blank=True)
+
+    # Other raw metrics
     metrics = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -81,13 +90,12 @@ class GpsDaily(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["athlete", "date"],
-                name="uniq_gps_daily_athlete_date",  # ← ここがコピペミスってた
+                name="uniq_gps_daily_athlete_date",
             ),
         ]
         indexes = [
             models.Index(fields=["date"]),
             models.Index(fields=["athlete", "date"]),
-            models.Index(fields=["md_phase", "date"]),
         ]
 
     def __str__(self):
@@ -98,14 +106,18 @@ class WorkloadFeaturesDaily(models.Model):
     athlete = models.ForeignKey(Athlete, on_delete=models.PROTECT, related_name="workload_features")
     date = models.DateField(db_column="date_")
 
-    ewma7_total_distance = models.FloatField(null=True, blank=True)
-    ewma28_total_distance = models.FloatField(null=True, blank=True)
-    acwr_ewma_total_distance = models.FloatField(null=True, blank=True)
+    # === Analysis Results ===
+    # 1. ACWR (Acute:Chronic Workload Ratio)
+    acwr_total_distance = models.FloatField(null=True, blank=True)
+    acwr_hsr = models.FloatField(null=True, blank=True)  # for FP
+    acwr_dive = models.FloatField(null=True, blank=True) # for GK
+    acwr_jump = models.FloatField(null=True, blank=True) # for GK
 
-    ewma7_total_player_load = models.FloatField(null=True, blank=True)
-    ewma28_total_player_load = models.FloatField(null=True, blank=True)
-    acwr_ewma_total_player_load = models.FloatField(null=True, blank=True)
+    # 2. Condition & Risk
+    monotony_load = models.FloatField(null=True, blank=True)
+    val_asymmetry = models.FloatField(null=True, blank=True) 
 
+    # For debugging / metadata
     params = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -120,83 +132,4 @@ class WorkloadFeaturesDaily(models.Model):
         ]
 
     def __str__(self):
-        return f"acwr athlete={self.athlete.athlete_id} date={self.date}"
-
-class FeatureRun(models.Model):
-    """
-    1回の実行（static / dynamic）をまとめて管理。
-    artifacts: feature_cols, impute_median, threshold, scaler_params などを丸ごと保存できる。
-    """
-    RUN_TYPES = (
-        ("static", "static"),
-        ("dynamic", "dynamic"),
-    )
-
-    run_type = models.CharField(max_length=20, choices=RUN_TYPES)
-    method = models.CharField(max_length=100, default="")
-    params = models.JSONField(default=dict, blank=True)      # config等
-    artifacts = models.JSONField(default=dict, blank=True)   # feature_cols, impute_median等
-    note = models.TextField(blank=True, default="")
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "feature_runs"
-        indexes = [
-            models.Index(fields=["run_type", "created_at"]),
-        ]
-
-    def __str__(self):
-        return f"{self.run_type}#{self.id} {self.method}"
-
-
-class StaticAnomalyDaily(models.Model):
-    run = models.ForeignKey(FeatureRun, on_delete=models.PROTECT, related_name="static_rows")
-    athlete = models.ForeignKey(Athlete, on_delete=models.PROTECT, related_name="static_anomalies")
-    date = models.DateField(db_column="date_")
-
-    static_score = models.FloatField(null=True, blank=True)
-    static_thr = models.FloatField(null=True, blank=True)
-    static_anomaly = models.BooleanField(default=False)
-
-    # notebookの top_features（[{feature,z}...] をjson文字列で持ってたが、DBではJSONでOK）
-    top_features = models.JSONField(null=True, blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "static_anomaly_daily"
-        constraints = [
-            models.UniqueConstraint(fields=["run", "athlete", "date"], name="uniq_static_run_athlete_date"),
-        ]
-        indexes = [
-            models.Index(fields=["athlete", "date"]),
-            models.Index(fields=["date"]),
-        ]
-
-
-class DynamicAnomalyDaily(models.Model):
-    run = models.ForeignKey(FeatureRun, on_delete=models.PROTECT, related_name="dynamic_rows")
-    athlete = models.ForeignKey(Athlete, on_delete=models.PROTECT, related_name="dynamic_anomalies")
-    date = models.DateField(db_column="date_")
-
-    dyn_error = models.FloatField(null=True, blank=True)
-    dyn_thr = models.FloatField(null=True, blank=True)
-    dyn_anomaly = models.BooleanField(default=False)
-    dyn_streak = models.IntegerField(null=True, blank=True)
-
-    season_block = models.IntegerField(null=True, blank=True)
-    season_reset_zone = models.BooleanField(default=False)
-    static_anomaly = models.BooleanField(default=False)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "dynamic_anomaly_daily"
-        constraints = [
-            models.UniqueConstraint(fields=["run", "athlete", "date"], name="uniq_dynamic_run_athlete_date"),
-        ]
-        indexes = [
-            models.Index(fields=["athlete", "date"]),
-            models.Index(fields=["date"]),
-        ]
+        return f"features athlete={self.athlete.athlete_id} date={self.date}"

@@ -1,148 +1,97 @@
-from datetime import datetime
-
+import pandas as pd
+import numpy as np
 from django.core.management.base import BaseCommand
 from django.db import transaction
-
 from workload.models import GpsDaily, WorkloadFeaturesDaily
 
+def calc_acwr_series(series, acute=7, chronic=28):
+    # Rolling mean on zero-filled data
+    acute_load = series.rolling(window=acute, min_periods=1).mean()
+    chronic_load = series.rolling(window=chronic, min_periods=1).mean()
+    # Avoid division by zero
+    return np.where(chronic_load > 0, acute_load / chronic_load, 0)
 
-def ewma_with_none(values, alpha):
-    """
-    Noneの日はEWMAを更新せず、出力もNoneにする。
-    """
-    out = []
-    s = None
-    for v in values:
-        if v is None:
-            out.append(None)
-            continue
-        if s is None:
-            s = v
-        else:
-            s = alpha * v + (1 - alpha) * s
-        out.append(s)
-    return out
-
-
-def compute_acwr_ewma(values, acute_days=7, chronic_days=28):
-    alpha_a = 2 / (acute_days + 1)
-    alpha_c = 2 / (chronic_days + 1)
-
-    ewma_a = ewma_with_none(values, alpha_a)
-    ewma_c = ewma_with_none(values, alpha_c)
-
-    acwr = []
-    for a, c in zip(ewma_a, ewma_c):
-        if a is None or c is None or c == 0:
-            acwr.append(None)
-        else:
-            acwr.append(a / c)
-    return ewma_a, ewma_c, acwr
-
-
-def split_blocks_by_gap(dates, break_days=30):
-    if not dates:
-        return []
-    blocks = []
-    start = 0
-    for i in range(1, len(dates)):
-        gap = (dates[i] - dates[i - 1]).days
-        if gap > break_days:
-            blocks.append((start, i))
-            start = i
-    blocks.append((start, len(dates)))
-    return blocks
-
+def calc_monotony_series(series, window=7):
+    r_mean = series.rolling(window=window).mean()
+    r_std = series.rolling(window=window).std()
+    return np.where(r_std > 0, r_mean / r_std, 0)
 
 class Command(BaseCommand):
-    help = "Build EWMA/ACWR features from gps_daily"
-
-    def add_arguments(self, parser):
-        parser.add_argument("--start", type=str, default=None, help="YYYY-MM-DD (optional)")
-        parser.add_argument("--end", type=str, default=None, help="YYYY-MM-DD (optional)")
-        parser.add_argument("--break_days", type=int, default=30)
-        parser.add_argument("--dry_run", action="store_true")
-        parser.add_argument("--delete_existing", action="store_true")
+    help = "Build ACWR/Monotony features with Zero-filling and GK logic"
 
     def handle(self, *args, **options):
-        start = options["start"]
-        end = options["end"]
-        break_days = options["break_days"]
-        dry_run = options["dry_run"]
-        delete_existing = options["delete_existing"]
-
-        qs = GpsDaily.objects.all()
-        if start:
-            qs = qs.filter(date__gte=start)
-        if end:
-            qs = qs.filter(date__lte=end)
-
-        athlete_ids = qs.values_list("athlete_id", flat=True).distinct()
-        self.stdout.write(self.style.NOTICE(f"athletes to process: {athlete_ids.count()}"))
-
-        params = {"acute_days": 7, "chronic_days": 28, "break_days": break_days}
-        out_rows = []
-
-        for athlete_id in athlete_ids.iterator(chunk_size=2000):
-            dqs = qs.filter(athlete_id=athlete_id).order_by("date")
-
-            dates = list(dqs.values_list("date", flat=True))
-            td_vals = list(dqs.values_list("total_distance", flat=True))
-            pl_vals = list(dqs.values_list("total_player_load", flat=True))
-
-            blocks = split_blocks_by_gap(dates, break_days=break_days)
-
-            ewma7_td = [None] * len(dates)
-            ewma28_td = [None] * len(dates)
-            acwr_td = [None] * len(dates)
-
-            ewma7_pl = [None] * len(dates)
-            ewma28_pl = [None] * len(dates)
-            acwr_pl = [None] * len(dates)
-
-            for s, e in blocks:
-                a7, c28, r = compute_acwr_ewma(td_vals[s:e])
-                ewma7_td[s:e] = a7
-                ewma28_td[s:e] = c28
-                acwr_td[s:e] = r
-
-                a7, c28, r = compute_acwr_ewma(pl_vals[s:e])
-                ewma7_pl[s:e] = a7
-                ewma28_pl[s:e] = c28
-                acwr_pl[s:e] = r
-
-            for i, date_ in enumerate(dates):
-                out_rows.append(
-                    WorkloadFeaturesDaily(
-                        athlete_id=athlete_id,
-                        date=date_,
-                        ewma7_total_distance=ewma7_td[i],
-                        ewma28_total_distance=ewma28_td[i],
-                        acwr_ewma_total_distance=acwr_td[i],
-                        ewma7_total_player_load=ewma7_pl[i],
-                        ewma28_total_player_load=ewma28_pl[i],
-                        acwr_ewma_total_player_load=acwr_pl[i],
-                        params=params,
-                    )
-                )
-
-        self.stdout.write(self.style.NOTICE(f"rows to write: {len(out_rows)}"))
-
-        if dry_run:
-            self.stdout.write(self.style.WARNING("dry_run=True -> not writing to DB"))
+        # 1. Fetch only NECESSARY numeric columns to avoid TypeError on date columns
+        qs = GpsDaily.objects.all().values(
+            "athlete_id", "date",
+            "total_distance", "total_player_load",
+            "hsr_distance", "ima_asymmetry",
+            "total_dive_load", "total_jumps", "dive_asymmetry"
+        )
+        
+        df = pd.DataFrame(list(qs))
+        if df.empty:
+            self.stdout.write("No data found in GpsDaily.")
             return
 
-        if not delete_existing:
-            raise Exception("For safety: run with --delete_existing (to avoid unique constraint conflicts).")
+        df['date'] = pd.to_datetime(df['date'])
+        
+        # Identify GKs (Total dive load > 100)
+        # Note: dive_load might be NaN, so fillna(0) before sum
+        gk_load = df.fillna(0).groupby('athlete_id')['total_dive_load'].sum()
+        gk_ids = gk_load[gk_load > 100].index.tolist()
+        self.stdout.write(f"Identified GKs: {gk_ids}")
 
+        out_rows = []
+
+        # 2. Process per athlete
+        for athlete_id, group in df.groupby('athlete_id'):
+            group = group.sort_values('date')
+            
+            # --- Zero Filling ---
+            # Create full date range from start to end
+            full_idx = pd.date_range(start=group['date'].min(), end=group['date'].max(), freq='D')
+            
+            # set_index -> reindex -> fillna(0) works safely for numeric cols
+            # We explicitly select numeric columns to ensure fill_value=0 doesn't break anything
+            group = group.set_index('date').reindex(full_idx, fill_value=0).reset_index().rename(columns={'index': 'date'})
+            
+            is_gk = athlete_id in gk_ids
+
+            # --- Calculations ---
+            # Common Metrics
+            acwr_dist = calc_acwr_series(group['total_distance'])
+            monotony = calc_monotony_series(group['total_player_load']) 
+
+            # Position Specific
+            acwr_hsr = np.zeros(len(group))
+            acwr_dive = np.zeros(len(group))
+            acwr_jump = np.zeros(len(group))
+            asym_val = np.zeros(len(group))
+
+            if is_gk:
+                acwr_dive = calc_acwr_series(group['total_dive_load'])
+                acwr_jump = calc_acwr_series(group['total_jumps'])
+                asym_val = group['dive_asymmetry'].fillna(0).values
+            else:
+                acwr_hsr = calc_acwr_series(group['hsr_distance'])
+                asym_val = group['ima_asymmetry'].fillna(0).values
+
+            # --- Prepare Objects ---
+            for i, row in group.iterrows():
+                out_rows.append(WorkloadFeaturesDaily(
+                    athlete_id=athlete_id,
+                    date=row['date'].date(),
+                    acwr_total_distance=acwr_dist[i],
+                    acwr_hsr=acwr_hsr[i],
+                    acwr_dive=acwr_dive[i],
+                    acwr_jump=acwr_jump[i],
+                    monotony_load=monotony[i],
+                    val_asymmetry=asym_val[i],
+                ))
+
+        # 3. Save to DB
         with transaction.atomic():
-            del_qs = WorkloadFeaturesDaily.objects.all()
-            if start:
-                del_qs = del_qs.filter(date__gte=start)
-            if end:
-                del_qs = del_qs.filter(date__lte=end)
-            del_qs.delete()
-
+            WorkloadFeaturesDaily.objects.all().delete()
             WorkloadFeaturesDaily.objects.bulk_create(out_rows, batch_size=2000)
 
-        self.stdout.write(self.style.SUCCESS("workload_features_daily built successfully"))
+        self.stdout.write(self.style.SUCCESS(f"Built features for {len(out_rows)} days."))
