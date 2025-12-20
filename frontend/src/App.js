@@ -1,47 +1,81 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { fetchAthletes, fetchRuns, fetchTimeseries } from "./api";
+import { fetchAthletes, fetchTimeseries } from "./api";
 import "./App.css";
 
 import KpiCards from "./components/KpiCards";
 import WorkloadChart from "./components/WorkloadChart";
 import AcwrChart from "./components/AcwrChart";
+import ConditionChart from "./components/ConditionChart";
+
+// === 修正 1: Chart.jsの部品をここで一括登録する ===
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement, // これが重要
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from "chart.js";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
+// ===============================================
 
 function App() {
   const [athletes, setAthletes] = useState([]);
-  const [runs, setRuns] = useState([]);
   const [athleteId, setAthleteId] = useState("");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [range, setRange] = useState(90);
 
-  const [range, setRange] = useState(120); // days to show in UI (client-side)
-  const [metric, setMetric] = useState("total_distance"); // "total_distance" | "total_player_load"
-
-  const latestDynamicRun = useMemo(() => {
-    const d = runs.filter(r => r.run_type === "dynamic").sort((a,b) => b.id - a.id)[0];
-    return d?.id;
-  }, [runs]);
-
+  // 初回ロード
   useEffect(() => {
     (async () => {
-      const [a, r] = await Promise.all([fetchAthletes(), fetchRuns()]);
-      setAthletes(a);
-      setRuns(r);
-      if (a.length > 0) setAthleteId(a[0].athlete_id);
+      try {
+        const a = await fetchAthletes();
+        setAthletes(a);
+        if (a.length > 0) setAthleteId(a[0].athlete_id);
+      } catch (e) {
+        console.error("Failed to fetch athletes", e);
+      }
     })();
   }, []);
 
+  // データ取得
   useEffect(() => {
     if (!athleteId) return;
     (async () => {
       setLoading(true);
       try {
-        const ts = await fetchTimeseries(athleteId, { dynamic_run_id: latestDynamicRun });
+        const ts = await fetchTimeseries(athleteId);
         setRows(ts);
+        console.log("Fetched Data:", ts); // コンソールでデータ確認
+      } catch (e) {
+        console.error("Failed to fetch timeseries", e);
       } finally {
         setLoading(false);
       }
     })();
-  }, [athleteId, latestDynamicRun]);
+  }, [athleteId]);
+
+  const isGk = useMemo(() => {
+    if (!rows.length) return false;
+    const totalDive = rows.reduce((acc, r) => acc + (r.total_dive_load || 0), 0);
+    return totalDive > 500;
+  }, [rows]);
 
   const viewRows = useMemo(() => {
     if (!rows?.length) return [];
@@ -49,159 +83,132 @@ function App() {
     return rows.slice(-range);
   }, [rows, range]);
 
-  const selectedAthleteLabel = useMemo(() => {
-    const a = athletes.find(x => x.athlete_id === athleteId);
-    if (!a) return athleteId;
-    return a.athlete_name ? `${a.athlete_name} (${a.athlete_id.slice(0, 8)}…)` : a.athlete_id;
-  }, [athletes, athleteId]);
-
   return (
-    <div className="App" style={{ padding: 16, textAlign: "left" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
+    <div className="App" style={{ padding: 24, maxWidth: 1200, margin: "0 auto", fontFamily: "Inter, sans-serif" }}>
+      <header style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <h2 style={{ margin: 0 }}>Workload Dashboard</h2>
-          <div style={{ opacity: 0.7, marginTop: 4, fontSize: 12 }}>
-            {selectedAthleteLabel} {loading ? " / loading…" : ""}
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Condition Dashboard</h1>
+          {/* === 修正 2: データ状態のデバッグ表示 === */}
+          <div style={{ fontSize: 12, color: "#EF4444", fontWeight: "bold" }}>
+            Debug: データ件数 {rows.length}件 / 選択中: {athleteId}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: isGk ? "#D97706" : "#059669", background: isGk ? "#FEF3C7" : "#D1FAE5", padding: "4px 12px", borderRadius: 16, display: "inline-block" }}>
+            {isGk ? "GK Mode" : "FP Mode"}
+          </div>
+        </div>
+      </header>
+
+      {/* Controls */}
+      <div style={{ background: "#fff", padding: 16, borderRadius: 12, boxShadow: "0 1px 3px rgba(0,0,0,0.1)", display: "flex", gap: 20, alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>ATHLETE</label>
+          <select 
+            value={athleteId} 
+            onChange={(e) => setAthleteId(e.target.value)}
+            style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #D1D5DB", minWidth: 200 }}
+          >
+            {athletes.map(a => (
+              <option key={a.athlete_id} value={a.athlete_id}>{a.athlete_name || a.athlete_id}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 4 }}>RANGE</label>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[30, 90, 180, 0].map(v => (
+              <button
+                key={v}
+                onClick={() => setRange(v)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  border: "1px solid #E5E7EB",
+                  background: range === v ? "#111827" : "#fff",
+                  color: range === v ? "#fff" : "#374151",
+                  fontSize: 13,
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+              >
+                {v === 0 ? "All" : `${v} Days`}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Controls */}
-      <div style={{
-        marginTop: 12,
-        display: "flex",
-        gap: 12,
-        alignItems: "center",
-        flexWrap: "wrap",
-        background: "rgba(255,255,255,0.55)",
-        border: "1px solid rgba(0,0,0,0.08)",
-        borderRadius: 12,
-        padding: 12,
-        boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontSize: 12, opacity: 0.75 }}>Athlete</div>
-          <select value={athleteId} onChange={(e) => setAthleteId(e.target.value)}>
-            {athletes.map(a => (
-              <option key={a.athlete_id} value={a.athlete_id}>
-                {a.athlete_name ? `${a.athlete_name} (${a.athlete_id.slice(0,8)}…)` : a.athlete_id}
-              </option>
-            ))}
-          </select>
+      {/* KPI Cards */}
+      <section style={{ marginBottom: 24 }}>
+        <KpiCards rows={viewRows} isGk={isGk} />
+      </section>
+
+      {/* Charts Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 24 }}>
+        {/* Row 1: ACWR */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+          <div style={cardStyle}>
+            <h3 style={titleStyle}>① {isGk ? "Dive Load ACWR" : "Total Distance ACWR"}</h3>
+            <AcwrChart 
+              rows={viewRows} 
+              dataKey={isGk ? "acwr_dive" : "acwr_total_distance"} 
+              color="#2563EB" 
+            />
+          </div>
+          <div style={cardStyle}>
+            <h3 style={titleStyle}>② {isGk ? "Jump Load ACWR" : "HSR (Sprint) ACWR"}</h3>
+            <AcwrChart 
+              rows={viewRows} 
+              dataKey={isGk ? "acwr_jump" : "acwr_hsr"} 
+              color="#D97706" 
+            />
+          </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontSize: 12, opacity: 0.75 }}>Range</div>
-          {[30, 60, 120, 180, 0].map(v => (
-            <button
-              key={String(v)}
-              onClick={() => setRange(v)}
-              style={{
-                border: "1px solid rgba(0,0,0,0.15)",
-                background: range === v ? "rgba(17,24,39,0.9)" : "rgba(255,255,255,0.8)",
-                color: range === v ? "white" : "#111827",
-                padding: "6px 10px",
-                borderRadius: 10,
-                cursor: "pointer"
-              }}
-            >
-              {v === 0 ? "All" : `${v}d`}
-            </button>
-          ))}
+        {/* Row 2: Raw Load */}
+        <div style={cardStyle}>
+          <h3 style={titleStyle}>Daily Load (Raw)</h3>
+          <WorkloadChart rows={viewRows} isGk={isGk} />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontSize: 12, opacity: 0.75 }}>Metric</div>
-          <button
-            onClick={() => setMetric("total_distance")}
-            style={{
-              border: "1px solid rgba(0,0,0,0.15)",
-              background: metric === "total_distance" ? "rgba(17,24,39,0.9)" : "rgba(255,255,255,0.8)",
-              color: metric === "total_distance" ? "white" : "#111827",
-              padding: "6px 10px",
-              borderRadius: 10,
-              cursor: "pointer"
-            }}
-          >
-            TD
-          </button>
-          <button
-            onClick={() => setMetric("total_player_load")}
-            style={{
-              border: "1px solid rgba(0,0,0,0.15)",
-              background: metric === "total_player_load" ? "rgba(17,24,39,0.9)" : "rgba(255,255,255,0.8)",
-              color: metric === "total_player_load" ? "white" : "#111827",
-              padding: "6px 10px",
-              borderRadius: 10,
-              cursor: "pointer"
-            }}
-          >
-            PL
-          </button>
+        {/* Row 3: Condition */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+          <div style={cardStyle}>
+            <h3 style={titleStyle}>③ Training Monotony</h3>
+            <ConditionChart 
+              rows={viewRows} 
+              type="monotony"
+              dataKey="monotony_load"
+            />
+          </div>
+          <div style={cardStyle}>
+            <h3 style={titleStyle}>④ {isGk ? "Dive Asymmetry" : "IMA Asymmetry"}</h3>
+            <ConditionChart 
+              rows={viewRows} 
+              type="asymmetry"
+              dataKey="val_asymmetry"
+            />
+          </div>
         </div>
-      </div>
-
-      {/* KPI */}
-      <div style={{ marginTop: 12 }}>
-        <KpiCards rows={viewRows} />
-      </div>
-
-      {/* Charts */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 12, alignItems: "start" }}>
-        <WorkloadChart rows={viewRows} metric={metric} />
-        <div style={{ display: "grid", gap: 12 }}>
-          <AcwrChart rows={viewRows} which="td" />
-          <AcwrChart rows={viewRows} which="pl" />
-        </div>
-      </div>
-
-      {/* Table (detail) */}
-      <div style={{
-        marginTop: 12,
-        background: "rgba(255,255,255,0.55)",
-        border: "1px solid rgba(0,0,0,0.08)",
-        borderRadius: 12,
-        padding: 12,
-        boxShadow: "0 6px 18px rgba(0,0,0,0.06)",
-      }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>Recent rows</div>
-        <div style={{ overflowX: "auto" }}>
-          <table border="1" cellPadding="6" style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                <th>date</th>
-                <th>TD</th>
-                <th>PL</th>
-                <th>ACWR(TD)</th>
-                <th>ACWR(PL)</th>
-                <th>static</th>
-                <th>dyn</th>
-                <th>streak</th>
-              </tr>
-            </thead>
-            <tbody>
-              {viewRows.slice(-60).map((r) => (
-                <tr key={String(r.date)}>
-                  <td>{String(r.date)}</td>
-                  <td>{r.total_distance?.toFixed?.(1) ?? ""}</td>
-                  <td>{r.total_player_load?.toFixed?.(1) ?? ""}</td>
-                  <td>{r.workload?.acwr_ewma_total_distance?.toFixed?.(2) ?? ""}</td>
-                  <td>{r.workload?.acwr_ewma_total_player_load?.toFixed?.(2) ?? ""}</td>
-                  <td>{r.static_anomaly ? "⚠️" : ""}</td>
-                  <td>{r.dynamic?.dyn_anomaly ? "🚨" : ""}</td>
-                  <td>{r.dynamic?.dyn_streak ?? 0}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <p style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
-          ※ 次は「異常一覧パネル」「日付クリックで詳細（dyn_error, dyn_thr, top_features）」を付けると完成度が跳ね上がります。
-        </p>
       </div>
     </div>
   );
 }
+
+const cardStyle = {
+  background: "#fff",
+  borderRadius: 12,
+  padding: 20,
+  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+  border: "1px solid #F3F4F6"
+};
+
+const titleStyle = {
+  margin: "0 0 16px 0",
+  fontSize: 15,
+  fontWeight: 600,
+  color: "#374151"
+};
 
 export default App;
