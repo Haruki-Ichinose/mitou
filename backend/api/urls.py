@@ -18,5 +18,7 @@ urlpatterns = [
     
     # Workload endpoints
     path('workload/athletes/', WorkloadAthleteListView.as_view(), name='workload-athletes'),
-    path('workload/timeseries/<str:athlete_id>/', WorkloadAthleteTimeseriesView.as_view(), name='workload-timeseries'),
+    
+    # 【ここを修正】フロントエンドに合わせてパスを変更
+    path('workload/athletes/<str:athlete_id>/timeseries/', WorkloadAthleteTimeseriesView.as_view(), name='workload-timeseries'),
 ]

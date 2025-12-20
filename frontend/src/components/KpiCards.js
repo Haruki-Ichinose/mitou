@@ -1,68 +1,71 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { Line } from "react-chartjs-2";
 
-export default function KpiCards({ rows, isGk }) {
-  const kpi = useMemo(() => {
-    const last = rows[rows.length - 1] || {};
-    const workload = last.workload || {};
-    
+export default function WorkloadChart({ rows, isGk }) {
+  // 表示する指標を選択可能に
+  const [metric, setMetric] = useState(isGk ? "total_dive_load" : "total_distance");
+
+  // モードが変わったらデフォルト値リセット
+  useMemo(() => {
+    setMetric(isGk ? "total_dive_load" : "total_distance");
+  }, [isGk]);
+
+  const data = useMemo(() => {
     return {
-      date: last.date,
-      mainLoad: isGk ? last.total_dive_load : last.total_distance,
-      subLoad: isGk ? last.total_jumps : last.hsr_distance,
-      acwrMain: isGk ? workload.acwr_dive : workload.acwr_total_distance,
-      acwrSub: isGk ? workload.acwr_jump : workload.acwr_hsr,
-      monotony: workload.monotony_load,
-      asymmetry: workload.val_asymmetry
+      labels: rows.map(r => r.date),
+      datasets: [
+        {
+          label: metric,
+          data: rows.map(r => r[metric]),
+          borderColor: "#F97316", // オレンジ
+          backgroundColor: "rgba(249, 115, 22, 0.1)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 1,
+        }
+      ],
     };
-  }, [rows, isGk]);
-
-  if (!kpi.date) return null;
+  }, [rows, metric]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-      <Card 
-        title={isGk ? "Daily Dive Load" : "Daily Distance"} 
-        value={kpi.mainLoad?.toFixed(0) || "-"} 
-        unit={isGk ? "au" : "m"} 
-      />
-      <Card 
-        title={isGk ? "ACWR (Dive)" : "ACWR (Dist)"} 
-        value={kpi.acwrMain?.toFixed(2) || "-"} 
-        status={getAcwrStatus(kpi.acwrMain)}
-      />
-      <Card 
-        title="Monotony" 
-        value={kpi.monotony?.toFixed(2) || "-"} 
-        status={kpi.monotony > 2.0 ? "danger" : "good"}
-      />
-      <Card 
-        title="Asymmetry" 
-        value={(kpi.asymmetry?.toFixed(1) || "0") + "%"} 
-        status={kpi.asymmetry > 15 ? "warning" : "good"}
-      />
-    </div>
-  );
-}
-
-function getAcwrStatus(val) {
-  if (!val) return "neutral";
-  if (val > 1.5) return "danger";
-  if (val < 0.8) return "warning";
-  return "good";
-}
-
-function Card({ title, value, unit, status }) {
-  let color = "#111827";
-  if (status === "danger") color = "#EF4444";
-  if (status === "warning") color = "#F59E0B";
-  if (status === "good") color = "#10B981";
-
-  return (
-    <div style={{ background: "#fff", padding: "16px", borderRadius: 12, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #F3F4F6" }}>
-      <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 8 }}>{title}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color }}>
-        {value} <span style={{ fontSize: 14, color: "#9CA3AF", fontWeight: 400 }}>{unit}</span>
+    <div>
+      <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
+        {isGk ? (
+          <>
+            <MetricBtn label="ダイブ負荷" active={metric === "total_dive_load"} onClick={() => setMetric("total_dive_load")} />
+            <MetricBtn label="ジャンプ数" active={metric === "total_jumps"} onClick={() => setMetric("total_jumps")} />
+            <MetricBtn label="プレイヤーロード" active={metric === "total_player_load"} onClick={() => setMetric("total_player_load")} />
+          </>
+        ) : (
+          <>
+            <MetricBtn label="総走行距離" active={metric === "total_distance"} onClick={() => setMetric("total_distance")} />
+            <MetricBtn label="スプリント距離(HSR)" active={metric === "hsr_distance"} onClick={() => setMetric("hsr_distance")} />
+            <MetricBtn label="プレイヤーロード" active={metric === "total_player_load"} onClick={() => setMetric("total_player_load")} />
+          </>
+        )}
+      </div>
+      <div style={{ height: 300 }}>
+        <Line data={data} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } } } }} />
       </div>
     </div>
   );
 }
+
+const MetricBtn = ({ label, active, onClick }) => (
+  <button
+    onClick={onClick}
+    style={{
+      padding: "4px 12px",
+      fontSize: 12,
+      borderRadius: 16,
+      border: "none",
+      background: active ? "#F97316" : "#FFF7ED",
+      color: active ? "#fff" : "#9A3412",
+      fontWeight: active ? 700 : 500,
+      cursor: "pointer",
+      border: active ? "none" : "1px solid #FED7AA"
+    }}
+  >
+    {label}
+  </button>
+);
