@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from workload.models import GpsDaily, WorkloadFeaturesDaily
+from workload.models import GpsDaily, WorkloadFeaturesDaily, Athlete
 
 def calc_acwr_series(series, acute=7, chronic=28):
     # Rolling mean on zero-filled data
@@ -17,7 +17,7 @@ def calc_monotony_series(series, window=7):
     return np.where(r_std > 0, r_mean / r_std, 0)
 
 class Command(BaseCommand):
-    help = "Build ACWR/Monotony features with Zero-filling and GK logic"
+    help = "Build ACWR/Monotony features with Zero-filling and GK logic (Position from DB)"
 
     def handle(self, *args, **options):
         # 1. Fetch only NECESSARY numeric columns to avoid TypeError on date columns
@@ -35,12 +35,13 @@ class Command(BaseCommand):
 
         df['date'] = pd.to_datetime(df['date'])
         
-        # Identify GKs (Total dive load > 100)
-        # Note: dive_load might be NaN, so fillna(0) before sum
-        gk_load = df.fillna(0).groupby('athlete_id')['total_dive_load'].sum()
-        gk_ids = gk_load[gk_load > 100].index.tolist()
-        self.stdout.write(f"Identified GKs: {gk_ids}")
-
+        # ★変更: DBからポジション情報を事前にロード (GK判定ロジックの廃止)
+        # 辞書形式 {athlete_id: "GK" or "FP"}
+        athlete_positions = {
+            a.athlete_id: a.position 
+            for a in Athlete.objects.all()
+        }
+        
         out_rows = []
 
         # 2. Process per athlete
@@ -52,10 +53,10 @@ class Command(BaseCommand):
             full_idx = pd.date_range(start=group['date'].min(), end=group['date'].max(), freq='D')
             
             # set_index -> reindex -> fillna(0) works safely for numeric cols
-            # We explicitly select numeric columns to ensure fill_value=0 doesn't break anything
             group = group.set_index('date').reindex(full_idx, fill_value=0).reset_index().rename(columns={'index': 'date'})
             
-            is_gk = athlete_id in gk_ids
+            # ★変更: DBの値を使用して判定
+            is_gk = athlete_positions.get(athlete_id, "FP") == "GK"
 
             # --- Calculations ---
             # Common Metrics
@@ -94,4 +95,4 @@ class Command(BaseCommand):
             WorkloadFeaturesDaily.objects.all().delete()
             WorkloadFeaturesDaily.objects.bulk_create(out_rows, batch_size=2000)
 
-        self.stdout.write(self.style.SUCCESS(f"Built features for {len(out_rows)} days."))
+        self.stdout.write(self.style.SUCCESS(f"Built features for {len(out_rows)} days using correct positions from DB."))
