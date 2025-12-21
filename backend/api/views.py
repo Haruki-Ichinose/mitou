@@ -4,8 +4,6 @@ from datetime import date
 
 from django.conf import settings
 from django.utils.dateparse import parse_date
-# ★追加: Sum をインポート
-from django.db.models import Sum 
 from rest_framework import status, viewsets
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -93,23 +91,18 @@ class LatestTrainingLoadView(APIView):
 
 class WorkloadAthleteListView(APIView):
     def get(self, request):
-        # 1. 過去のデータからGKを自動判定 (ダイブ負荷の合計が多い選手)
-        gk_stats = GpsDaily.objects.values('athlete_id').annotate(total_dive=Sum('total_dive_load'))
-        gk_ids = {x['athlete_id'] for x in gk_stats if (x['total_dive'] or 0) > 500} # 閾値
-
-        # 2. 選手リストを作成
+        # ★修正: 集計処理を削除し、DBに保存されたポジション情報をそのまま返す
         qs = Athlete.objects.all().order_by("athlete_id")
         data = []
         for a in qs:
             # 名前が空ならIDを表示名にする
             display_name = a.athlete_name if a.athlete_name else a.athlete_id
-            is_gk = a.athlete_id in gk_ids
             
             data.append({
                 "athlete_id": a.athlete_id,
                 "athlete_name": display_name,
                 "is_active": a.is_active,
-                "position": "GK" if is_gk else "FP" # ★ポジション情報を付与
+                "position": a.position  # ★DBの値 ("GK" or "FP")
             })
             
         return Response(data, status=status.HTTP_200_OK)
