@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir \
     Django==5.2.0 \
     djangorestframework==3.15.1 \
+    djangorestframework-simplejwt==5.3.1 \
     psycopg2-binary==2.9.9 \
     python-dotenv \
     django-cors-headers \

@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
 from pathlib import Path
+from datetime import timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -49,6 +50,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'rest_framework_simplejwt.token_blacklist',
     'api.apps.ApiConfig',
 ]
 
@@ -140,6 +142,32 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = get_csv_env("CORS_ALLOWED_ORIGINS", ["http://localhost:3000"])
+CORS_ALLOW_CREDENTIALS = True
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'UPDATE_LAST_LOGIN': False,
+}
+
+REFRESH_TOKEN_COOKIE_NAME = os.environ.get('REFRESH_TOKEN_COOKIE_NAME', 'refresh_token')
+REFRESH_TOKEN_COOKIE_SECURE = True  # HTTPS required
+REFRESH_TOKEN_COOKIE_HTTPONLY = True
+REFRESH_TOKEN_COOKIE_SAMESITE = 'Strict'
 
 # Directory for training CSV files in data ingestion workflows
 TRAINING_DATA_DIR = Path(os.environ.get('TRAINING_DATA_DIR', BASE_DIR / 'data'))
