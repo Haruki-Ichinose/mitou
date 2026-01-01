@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Line } from "react-chartjs-2";
 
 export default function WorkloadChart({ rows, isGk }) {
@@ -6,7 +6,7 @@ export default function WorkloadChart({ rows, isGk }) {
   const [metric, setMetric] = useState(isGk ? "total_dive_load" : "total_distance");
 
   // モードが変わったらデフォルト値リセット
-  useMemo(() => {
+  useEffect(() => {
     setMetric(isGk ? "total_dive_load" : "total_distance");
   }, [isGk]);
 

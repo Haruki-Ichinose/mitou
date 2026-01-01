@@ -3,7 +3,7 @@ import { Bar } from "react-chartjs-2";
 
 export default function ConditionChart({ rows, type, dataKey }) {
   const threshold = type === 'monotony' ? 2.0 : 20.0;
-  const baseColor = type === 'monotony' ? "#8B5CF6" : "#B45309"; 
+  const baseColor = type === 'monotony' ? "#0EA5E9" : "#B45309"; 
 
   const data = useMemo(() => {
     return {
