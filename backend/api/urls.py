@@ -1,24 +1,15 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from django.urls import path
 from .views import (
-    DailyTrainingLoadViewSet, 
-    LatestTrainingLoadView, 
-    TrainingDataIngestionView,
+    WorkloadIngestionView,
     WorkloadAthleteListView,
     WorkloadAthleteTimeseriesView
 )
 
-router = DefaultRouter()
-router.register(r'daily-training-load', DailyTrainingLoadViewSet)
-
 urlpatterns = [
-    path('', include(router.urls)),
-    path('ingest/', TrainingDataIngestionView.as_view(), name='ingest'),
-    path('latest-training-load/', LatestTrainingLoadView.as_view(), name='latest-training-load'),
-    
     # Workload endpoints
     path('workload/athletes/', WorkloadAthleteListView.as_view(), name='workload-athletes'),
-    
     # 【ここを修正】フロントエンドに合わせてパスを変更
     path('workload/athletes/<str:athlete_id>/timeseries/', WorkloadAthleteTimeseriesView.as_view(), name='workload-timeseries'),
+    path('workload/ingest/', WorkloadIngestionView.as_view(), name='workload-ingest'),
+    path('ingest/', WorkloadIngestionView.as_view(), name='ingest'),
 ]
