@@ -1,23 +1,11 @@
 from rest_framework import serializers
-from .models import DailyTrainingLoad
 
 
-class DailyTrainingLoadSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = DailyTrainingLoad
-        fields = (
-            'id',
-            'athlete_id',
-            'athlete_name',
-            'date',
-            'total_distance',
-            'acwr',
-        )
-
-
-class TrainingDataIngestionRequestSerializer(serializers.Serializer):
+class WorkloadIngestionRequestSerializer(serializers.Serializer):
     filename = serializers.CharField(required=False, allow_blank=False)
     file = serializers.FileField(required=False)
+    uploaded_by = serializers.CharField(required=False, allow_blank=True)
+    allow_duplicate = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         filename = attrs.get('filename')

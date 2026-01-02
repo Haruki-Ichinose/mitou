@@ -38,6 +38,8 @@ export default function App() {
   const [latestRecord, setLatestRecord] = useState(null);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
+  const metricKey = selectedAthlete?.metricKey || 'acwr_total_distance';
+  const metricLabel = selectedAthlete?.metricLabel || '総走行距離';
 
   const chartMetrics = useMemo(() => {
     if (!chartData.length) {
@@ -86,28 +88,39 @@ export default function App() {
     setError('');
 
     try {
-      const response = await axios.get(`${API_BASE_URL}/daily-training-loads/`);
-      const normalized = normalizeRecords(response.data);
-      const filtered = normalized.filter((record) =>
-        matchesAthlete(record, keyword)
+      const athleteResponse = await axios.get(
+        `${API_BASE_URL}/workload/athletes/`
       );
+      const athleteList = normalizeAthletes(athleteResponse.data);
+      const athlete = findAthlete(athleteList, keyword);
 
-      if (!filtered.length) {
+      if (!athlete) {
         setStatus('idle');
         setError('該当する選手が見つかりません。');
         return;
       }
 
-      const sorted = [...filtered].sort((a, b) => a.dateObj - b.dateObj);
+      const timeseriesResponse = await axios.get(
+        `${API_BASE_URL}/workload/athletes/${athlete.athlete_id}/timeseries/`
+      );
+      const normalized = normalizeRecords(timeseriesResponse.data);
+      const sorted = [...normalized].sort((a, b) => a.dateObj - b.dateObj);
       const latest = sorted[sorted.length - 1];
-      const points = buildChartData(sorted, latest);
+      const metricKey =
+        athlete.position === 'GK' ? 'acwr_dive' : 'acwr_total_distance';
+      const metricLabel =
+        athlete.position === 'GK' ? 'ダイブ負荷' : '総走行距離';
+      const points = buildChartData(sorted, latest, metricKey);
 
       setRecords(sorted);
       setLatestRecord(latest);
       setChartData(points);
       setSelectedAthlete({
-        id: String(latest.athlete_id),
-        name: latest.athlete_name || `選手 ${latest.athlete_id}`,
+        id: String(athlete.athlete_id),
+        name: athlete.athlete_name || `選手 ${athlete.athlete_id}`,
+        position: athlete.position || 'FP',
+        metricKey,
+        metricLabel,
       });
       setStatus('loaded');
     } catch (err) {
@@ -172,10 +185,12 @@ export default function App() {
                     </Text>
                   </View>
                   <View>
-                    <Text style={styles.summaryLabel}>最新ACWR</Text>
+                    <Text style={styles.summaryLabel}>
+                      最新ACWR（{metricLabel}）
+                    </Text>
                     <Text style={styles.summaryValue}>
-                      {typeof latestRecord.acwr === 'number'
-                        ? latestRecord.acwr.toFixed(3)
+                      {typeof latestRecord.workload?.[metricKey] === 'number'
+                        ? latestRecord.workload[metricKey].toFixed(3)
                         : '算出不可'}
                     </Text>
                   </View>
@@ -352,13 +367,40 @@ function AcwrChart({ data, rangeStart, rangeEnd, maxValue, yTicks, dateTicks }) 
   );
 }
 
-function matchesAthlete(record, keyword) {
+function normalizeAthletes(rawAthletes) {
+  if (!Array.isArray(rawAthletes)) {
+    return [];
+  }
+
+  return rawAthletes
+    .map((item) => {
+      if (!item) {
+        return null;
+      }
+      return {
+        athlete_id: item.athlete_id,
+        athlete_name: item.athlete_name || '',
+        position: item.position || 'FP',
+        is_active: item.is_active ?? true,
+      };
+    })
+    .filter(Boolean);
+}
+
+function findAthlete(athletes, keyword) {
   const normalized = keyword.trim().toLowerCase();
-  const idMatch = String(record.athlete_id) === keyword.trim();
-  const nameMatch =
-    typeof record.athlete_name === 'string' &&
-    record.athlete_name.trim().toLowerCase() === normalized;
-  return idMatch || nameMatch;
+  const idMatch = athletes.find(
+    (athlete) => String(athlete.athlete_id) === keyword.trim()
+  );
+  if (idMatch) {
+    return idMatch;
+  }
+
+  return athletes.find(
+    (athlete) =>
+      typeof athlete.athlete_name === 'string' &&
+      athlete.athlete_name.trim().toLowerCase() === normalized
+  );
 }
 
 function normalizeRecords(rawRecords) {
@@ -375,20 +417,15 @@ function normalizeRecords(rawRecords) {
 
       return {
         ...item,
-        athlete_id: item.athlete_id,
-        athlete_name: item.athlete_name || '',
         date: item.date,
         dateObj,
-        acwr:
-          typeof item.acwr === 'number' && !Number.isNaN(item.acwr)
-            ? item.acwr
-            : null,
+        workload: item.workload || {},
       };
     })
     .filter(Boolean);
 }
 
-function buildChartData(records, latestRecord) {
+function buildChartData(records, latestRecord, metricKey) {
   if (!latestRecord) {
     return [];
   }
@@ -400,10 +437,10 @@ function buildChartData(records, latestRecord) {
     .filter(
       (record) => record.dateObj >= rangeStart && record.dateObj <= rangeEnd
     )
-    .filter((record) => typeof record.acwr === 'number')
+    .filter((record) => typeof record.workload?.[metricKey] === 'number')
     .map((record) => ({
       x: record.dateObj,
-      y: record.acwr,
+      y: record.workload[metricKey],
     }));
 }
 

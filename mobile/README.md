@@ -1,6 +1,6 @@
 # ACWR Mobile (React Native)
 
-選手本人向けのモバイルアプリです。React Native (Expo) で実装し、既存のAPI (`/api/daily-training-loads/`) から取得したデータを選手IDまたは選手名で絞り込んでACWR推移を表示します。管理者用のWebアプリとは役割を分離し、選手は自分のデータのみを閲覧できます。
+選手本人向けのモバイルアプリです。React Native (Expo) で実装し、workload系APIから取得したデータを選手IDまたは選手名で絞り込んでACWR推移を表示します。管理者用のWebアプリとは役割を分離し、選手は自分のデータのみを閲覧できます。
 
 ## セットアップ
 
@@ -43,6 +43,6 @@ npx expo start --dev-client --clear
 
 ## データ仕様
 
-- 取得エンドポイント: `GET /api/daily-training-loads/`
+- 取得エンドポイント: `GET /api/workload/athletes/`, `GET /api/workload/athletes/{athlete_id}/timeseries/`
 - フィルタ条件: `athlete_id` が入力値と一致、または `athlete_name` が入力値と完全一致（大文字小文字を無視）。
 - グラフ: 最新日付を基準に直近30日分を描画。適正範囲 (0.8–1.3) を帯で表示し、2.0 を超える値があれば縦軸を自動拡張します。

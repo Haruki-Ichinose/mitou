@@ -1,17 +1,21 @@
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from datetime import date
 
 from django.conf import settings
 from django.utils.dateparse import parse_date
-from rest_framework import status, viewsets
+from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import DailyTrainingLoad
-from .serializers import DailyTrainingLoadSerializer, TrainingDataIngestionRequestSerializer
-from .services import CSVIngestionError, ingest_training_load_from_csv
+from .serializers import WorkloadIngestionRequestSerializer
+from workload.services import (
+    WorkloadIngestionError,
+    detect_positions,
+    import_statsallgroup_csv,
+    rebuild_gps_daily,
+    rebuild_workload_features,
+)
 
 from workload.models import (
     Athlete,
@@ -25,19 +29,18 @@ def _parse_ymd(s: str | None):
     d = parse_date(s)
     return d
 
-class DailyTrainingLoadViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = DailyTrainingLoad.objects.all().order_by('athlete_id', 'date')
-    serializer_class = DailyTrainingLoadSerializer
 
-class TrainingDataIngestionView(APIView):
+class WorkloadIngestionView(APIView):
     parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def post(self, request):
-        serializer = TrainingDataIngestionRequestSerializer(data=request.data)
+        serializer = WorkloadIngestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         uploaded_file = serializer.validated_data.get('file')
         temp_path: Path | None = None
+        uploaded_by = serializer.validated_data.get('uploaded_by') or ""
+        allow_duplicate = serializer.validated_data.get("allow_duplicate", False)
 
         try:
             target_filename: str
@@ -56,35 +59,22 @@ class TrainingDataIngestionView(APIView):
             else:
                 target_filename = serializer.validated_data['filename']
 
-            summary = ingest_training_load_from_csv(target_filename, dry_run=False)
-        except CSVIngestionError as exc:
+            summary = import_statsallgroup_csv(
+                target_filename,
+                uploaded_by=uploaded_by,
+                allow_duplicate=allow_duplicate,
+            )
+            if summary.rows_imported > 0 and summary.athletes:
+                rebuild_gps_daily(athlete_ids=summary.athletes)
+                detect_positions(athlete_ids=summary.athletes)
+                rebuild_workload_features(athlete_ids=summary.athletes)
+        except WorkloadIngestionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink(missing_ok=True)
 
         return Response(summary.as_dict(), status=status.HTTP_200_OK)
-
-class LatestTrainingLoadView(APIView):
-    def get(self, request):
-        athlete_id = request.query_params.get('athlete_id')
-        athlete_name = request.query_params.get('athlete_name')
-
-        if not athlete_id and not athlete_name:
-            return Response({'detail': 'athlete_id または athlete_name を指定してください。'}, status=status.HTTP_400_BAD_REQUEST)
-
-        queryset = DailyTrainingLoad.objects.order_by('-date', '-id')
-        if athlete_id:
-            queryset = queryset.filter(athlete_id=str(athlete_id).strip())
-        if athlete_name:
-            queryset = queryset.filter(athlete_name=str(athlete_name).strip())
-
-        latest_record = queryset.first()
-        if not latest_record:
-            return Response({'detail': '該当するデータが見つかりませんでした。'}, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = DailyTrainingLoadSerializer(latest_record)
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 # === 以下、Workload関連ビュー（修正版） ===
