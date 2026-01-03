@@ -26,21 +26,22 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000
 - raw CSV は Git 管理しません。以下に配置してください: `data/raw/StatsAllGroup.csv`
 - 文字コードは `cp932` / `shift_jis` の可能性がありますが、import コマンド側で自動判定します。
 
-## データの取り込みと計算
-
-1. 生データ (CSV) の取り込み  
+## データの取り込み・再計算手順
+1. マイグレーション適用（初回/スキーマ変更時）  
+   ```bash
+   python backend/manage.py migrate
+   ```
+2. 生データ (CSV) の取り込み  
    ```bash
    python manage.py import_statsallgroup_raw --csv /workspace/data/raw/StatsAllGroup.csv --user system
    ```
-
-2. 日次データの集計 (HSR, ダイブ負荷などの計算)  
+3. 日次集計の再構築（0埋め・HSR・ダイブ負荷など）  
    ```bash
-   python manage.py build_gps_daily --delete_existing
+   python backend/manage.py build_gps_daily --delete_existing
    ```
-
-3. 分析指標の算出 (ACWR, Monotony, 0埋め処理)  
+4. 指標とリスク算出（ACWR、Monotony など）  
    ```bash
-   python manage.py build_workload_features
+   python backend/manage.py build_workload_features
    ```
 
 ## モバイルアプリ（React Native / Expo Dev Client）
