@@ -15,6 +15,16 @@ export async function fetchTimeseries(athleteId, params = {}) {
   return data;
 }
 
+export async function createAthleteProfile(payload) {
+  const { data } = await client.post("/workload/athletes/", payload);
+  return data;
+}
+
+export async function fetchUploadHistory(params = {}) {
+  const { data } = await client.get("/workload/uploads/", { params });
+  return data;
+}
+
 export async function uploadWorkloadCsv(file, uploadedBy = "", allowDuplicate = false) {
   const formData = new FormData();
   formData.append("file", file);

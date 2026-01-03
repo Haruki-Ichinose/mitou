@@ -28,6 +28,7 @@ class DataUpload(models.Model):
 class Athlete(models.Model):
     athlete_id = models.CharField(max_length=64, primary_key=True)
     athlete_name = models.CharField(max_length=255, blank=True, default="")
+    jersey_number = models.CharField(max_length=12, blank=True, default="")
     is_active = models.BooleanField(default=True)
     
     # ★追加: ポジション情報 (GK判定のSingle Source of Truth)
@@ -41,7 +42,9 @@ class Athlete(models.Model):
         db_table = "athletes"
 
     def __str__(self):
-        return f"{self.athlete_name} ({self.position})"
+        label = self.athlete_name or self.athlete_id
+        number = f"#{self.jersey_number} " if self.jersey_number else ""
+        return f"{number}{label} ({self.position})"
 
 
 class GpsSessionRaw(models.Model):

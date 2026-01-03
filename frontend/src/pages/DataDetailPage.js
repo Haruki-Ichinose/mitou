@@ -1,31 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fetchAthletes, fetchTimeseries } from "../api";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  RadialLinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Filler,
-  Tooltip,
-  Legend,
-} from "chart.js";
-import { Chart } from "react-chartjs-2";
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  RadialLinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  Filler,
-  Tooltip,
-  Legend
-);
+import titleLogo from "../components/title.jpg";
 
 const theme = {
   bg: "var(--surface)",
@@ -57,7 +33,7 @@ const styles = {
   },
   topNav: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
     marginBottom: 12,
   },
@@ -338,7 +314,6 @@ export default function DataDetailPage() {
     <div className="app-shell">
       <div className="page data-detail-page" style={styles.container}>
         <div style={styles.topNav}>
-          <span style={styles.topNavLabel}>Performance Detail</span>
           <div style={styles.topNavActions}>
             <Link className="ghost-button" to="/data">
               一覧へ
@@ -351,8 +326,11 @@ export default function DataDetailPage() {
 
         <header style={styles.header}>
           <div style={styles.brand}>
-            <h1 style={styles.title}>Predict2Protect</h1>
-            <p style={styles.subtitle}>怪我予防・コンディション管理システム</p>
+            <img
+              className="title-logo title-logo--detail"
+              src={titleLogo}
+              alt="Predict2Protect"
+            />
           </div>
           <div style={styles.badge(isGk)}>
             <span>{isGk ? "🧤" : "🏃"}</span>

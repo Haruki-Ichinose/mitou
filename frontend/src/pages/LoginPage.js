@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import titleLogo from "../components/title.jpg";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -13,8 +14,11 @@ export default function LoginPage() {
     <div className="app-shell">
       <div className="page login-page">
         <header className="hero">
-          <h1 className="hero-title">Predict2Protect</h1>
-          <p className="hero-subtitle">怪我予防・コンディション管理システム</p>
+          <img
+            className="title-logo title-logo--hero"
+            src={titleLogo}
+            alt="Predict2Protect"
+          />
         </header>
 
         <form className="login-card" onSubmit={handleSubmit}>
