@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Dimensions,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -67,10 +68,13 @@ const RISK_META = {
 
 export default function App() {
   const [athleteInput, setAthleteInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [latestRecord, setLatestRecord] = useState(null);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
+  const { height: windowHeight } = Dimensions.get('window');
+  const riskCardHeight = Math.max(260, windowHeight * 0.38);
 
   const loginAnim = useRef(new Animated.Value(0)).current;
   const homeAnims = useRef([
@@ -78,11 +82,7 @@ export default function App() {
     new Animated.Value(0),
     new Animated.Value(0),
   ]).current;
-
-  const metricKey =
-    selectedAthlete?.position === 'GK' ? 'acwr_dive' : 'acwr_total_distance';
-  const metricLabel =
-    selectedAthlete?.position === 'GK' ? 'ダイブ負荷' : '総走行距離';
+  const passwordInputRef = useRef(null);
 
   const riskMeta = useMemo(
     () => getRiskMeta(selectedAthlete?.riskLevel),
@@ -118,8 +118,13 @@ export default function App() {
 
   const handleLogin = async () => {
     const keyword = athleteInput.trim();
+    const password = passwordInput.trim();
     if (!keyword) {
       setError('IDを入力してください。');
+      return;
+    }
+    if (!password) {
+      setError('PWを入力してください。');
       return;
     }
 
@@ -176,6 +181,7 @@ export default function App() {
     setSelectedAthlete(null);
     setLatestRecord(null);
     setAthleteInput('');
+    setPasswordInput('');
     setError('');
     setStatus('idle');
   };
@@ -199,20 +205,19 @@ export default function App() {
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.headerRow}>
-                <View style={styles.headerLeft}>
-                  <Image
-                    source={titleLogo}
-                    style={styles.logoSmall}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.screenTitle}>ホーム</Text>
-                  <Text style={styles.subTitle}>
-                    {selectedAthlete.name} #{selectedAthlete.jerseyNumber || '-'}
-                  </Text>
-                </View>
+                <Image
+                  source={titleLogo}
+                  style={styles.logoHome}
+                  resizeMode="contain"
+                />
                 <TouchableOpacity style={styles.ghostButton} onPress={handleReset}>
-                  <Text style={styles.ghostButtonText}>選手切替</Text>
+                  <Text style={styles.ghostButtonText}>ログアウト</Text>
                 </TouchableOpacity>
+              </View>
+              <View style={styles.identityBlock}>
+                <Text style={styles.identityText}>
+                  {(selectedAthlete.jerseyNumber || '-').toString()} {selectedAthlete.name}
+                </Text>
               </View>
 
               <Animated.View
@@ -221,60 +226,54 @@ export default function App() {
                   {
                     backgroundColor: riskMeta.background,
                     borderColor: riskMeta.border,
+                    minHeight: riskCardHeight,
                   },
                   buildFadeSlide(homeAnims[0]),
                 ]}
               >
-                <View style={styles.riskHeader}>
-                  <Text style={[styles.riskLabel, { color: riskMeta.color }]}>
-                    {riskMeta.label}
-                  </Text>
-                  <Text style={styles.riskTag}>Risk Level</Text>
-                </View>
-                <Text style={styles.riskTitle}>{riskMeta.title}</Text>
-                <Text style={styles.riskMessage}>
-                  {selectedAthlete.riskReasons?.length
-                    ? `主な指標: ${selectedAthlete.riskReasons.join(' / ')}`
-                    : riskMeta.message}
+                <Text style={[styles.riskStatus, { color: riskMeta.color }]}>
+                  {riskMeta.label}
                 </Text>
               </Animated.View>
 
               <Animated.View
                 style={[styles.actionWrapper, buildFadeSlide(homeAnims[1])]}
               >
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={handleDetailPress}
-                >
-                  <Text style={styles.primaryButtonText}>詳細な結果を見る</Text>
-                </TouchableOpacity>
-              </Animated.View>
-
-              <Animated.View
-                style={[styles.infoCard, buildFadeSlide(homeAnims[2])]}
-              >
-                <Text style={styles.cardTitle}>最新データ</Text>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>ポジション</Text>
-                  <Text style={styles.infoValue}>
-                    {formatPosition(selectedAthlete.position)}
-                  </Text>
-                </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>最新更新日</Text>
-                  <Text style={styles.infoValue}>
-                    {latestRecord
-                      ? formatFullDate(latestRecord.dateObj)
-                      : 'データなし'}
-                  </Text>
-                </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>
-                    最新ACWR（{metricLabel}）
-                  </Text>
-                  <Text style={styles.infoValue}>
-                    {formatMetricValue(latestRecord?.workload?.[metricKey])}
-                  </Text>
+                <View style={styles.actionStack}>
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={handleDetailPress}
+                  >
+                    <Text style={styles.primaryButtonText}>
+                      最新の詳細な結果を見る
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, styles.historyButton]}
+                    onPress={handleDetailPress}
+                  >
+                    <Text
+                      style={[
+                        styles.secondaryButtonText,
+                        styles.secondaryButtonTextLight,
+                      ]}
+                    >
+                      過去のデータを見る
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, styles.matchButton]}
+                    onPress={handleDetailPress}
+                  >
+                    <Text
+                      style={[
+                        styles.secondaryButtonText,
+                        styles.secondaryButtonTextLight,
+                      ]}
+                    >
+                      試合におけるデータを見る
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </Animated.View>
             </ScrollView>
@@ -305,6 +304,24 @@ export default function App() {
                     autoCapitalize="none"
                     keyboardType="number-pad"
                     onChangeText={setAthleteInput}
+                    returnKeyType="next"
+                    onSubmitEditing={() => passwordInputRef.current?.focus()}
+                  />
+                </View>
+                <View style={styles.formField}>
+                  <Text style={styles.label}>PW</Text>
+                  <TextInput
+                    ref={passwordInputRef}
+                    style={styles.input}
+                    placeholder="PWを入力してください"
+                    placeholderTextColor="rgba(15, 23, 42, 0.4)"
+                    value={passwordInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    textContentType="password"
+                    autoComplete="password"
+                    onChangeText={setPasswordInput}
                     returnKeyType="go"
                     onSubmitEditing={handleLogin}
                   />
@@ -428,25 +445,6 @@ function normalizeRecords(rawRecords) {
     .filter(Boolean);
 }
 
-function formatMetricValue(value) {
-  if (typeof value === 'number') {
-    return value.toFixed(3);
-  }
-  return '算出中';
-}
-
-function formatPosition(position) {
-  return position === 'GK' ? 'ゴールキーパー' : 'フィールドプレーヤー';
-}
-
-function formatFullDate(dateObj) {
-  return dateObj.toLocaleDateString('ja-JP', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-}
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -521,23 +519,49 @@ const styles = StyleSheet.create({
     fontFamily: FONT_BODY_BOLD,
   },
   primaryButton: {
-    backgroundColor: '#b91c1c',
-    paddingVertical: 16,
+    backgroundColor: '#fee2e2',
+    paddingVertical: 20,
     borderRadius: 16,
     alignItems: 'center',
-    shadowColor: 'rgba(185, 28, 28, 0.35)',
-    shadowOpacity: 0.5,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 20,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    shadowColor: 'rgba(15, 23, 42, 0.12)',
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    elevation: 2,
   },
   primaryButtonDisabled: {
     opacity: 0.7,
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: '#0f172a',
+    fontSize: 18,
+    fontFamily: FONT_BODY_BOLD,
+  },
+  secondaryButton: {
+    backgroundColor: '#ffedd5',
+    paddingVertical: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  secondaryButtonText: {
+    color: '#0f172a',
     fontSize: 17,
     fontFamily: FONT_BODY_BOLD,
+  },
+  secondaryButtonTextLight: {
+    color: '#0f172a',
+  },
+  historyButton: {
+    backgroundColor: '#ffedd5',
+    borderColor: '#fed7aa',
+  },
+  matchButton: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#fde68a',
   },
   loginButton: {
     paddingVertical: 20,
@@ -556,22 +580,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
   },
-  headerLeft: {
-    gap: 6,
+  logoHome: {
+    width: 190,
+    height: 64,
   },
-  logoSmall: {
-    width: 130,
-    height: 42,
+  identityBlock: {
+    marginTop: 6,
   },
-  screenTitle: {
-    fontFamily: FONT_DISPLAY,
-    fontSize: 36,
+  identityText: {
+    fontFamily: FONT_BODY_BOLD,
+    fontSize: 28,
     color: '#0f172a',
-  },
-  subTitle: {
-    fontFamily: FONT_BODY,
-    fontSize: 14,
-    color: '#475569',
+    letterSpacing: 1,
   },
   ghostButton: {
     paddingHorizontal: 14,
@@ -588,76 +608,27 @@ const styles = StyleSheet.create({
   },
   riskCard: {
     borderRadius: 24,
-    padding: 20,
+    paddingVertical: 28,
+    paddingHorizontal: 20,
     borderWidth: 1,
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: 'rgba(15, 23, 42, 0.1)',
     shadowOpacity: 0.4,
     shadowOffset: { width: 0, height: 12 },
     shadowRadius: 20,
     elevation: 3,
   },
-  riskHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  riskLabel: {
-    fontFamily: FONT_BODY_BOLD,
-    fontSize: 18,
-  },
-  riskTag: {
-    fontFamily: FONT_BODY,
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    color: '#475569',
-  },
-  riskTitle: {
+  riskStatus: {
     fontFamily: FONT_DISPLAY,
-    fontSize: 24,
-    color: '#0f172a',
-  },
-  riskMessage: {
-    fontFamily: FONT_BODY,
-    fontSize: 14,
-    color: '#475569',
+    fontSize: 64,
+    lineHeight: 72,
+    letterSpacing: 2,
   },
   actionWrapper: {
     alignItems: 'stretch',
   },
-  infoCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(15, 23, 42, 0.12)',
-    gap: 12,
-    shadowColor: 'rgba(15, 23, 42, 0.1)',
-    shadowOpacity: 0.4,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 20,
-    elevation: 3,
-  },
-  cardTitle: {
-    fontFamily: FONT_BODY_BOLD,
-    fontSize: 16,
-    color: '#0f172a',
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-  },
-  infoLabel: {
-    fontFamily: FONT_BODY,
-    fontSize: 13,
-    color: '#475569',
-  },
-  infoValue: {
-    fontFamily: FONT_BODY_BOLD,
-    fontSize: 14,
-    color: '#0f172a',
+  actionStack: {
+    gap: 18,
   },
 });
