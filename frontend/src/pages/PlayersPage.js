@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { createAthleteProfile, fetchAthletes } from "../api";
 import titleLogo from "../components/title.jpg";
+import playerJersey from "../components/player.png";
+import keeperJersey from "../components/keeper.png";
 
 export default function PlayersPage() {
   const [athletes, setAthletes] = useState([]);
@@ -12,6 +14,7 @@ export default function PlayersPage() {
     athlete_id: "",
     athlete_name: "",
     jersey_number: "",
+    uniform_name: "",
   });
   const [submitStatus, setSubmitStatus] = useState("idle");
   const [submitMessage, setSubmitMessage] = useState("");
@@ -21,7 +24,7 @@ export default function PlayersPage() {
     setError("");
     try {
       const list = await fetchAthletes();
-      setAthletes(list);
+      setAthletes([...list].sort(compareAthletes));
     } catch (err) {
       console.error(err);
       setError("選手データの取得に失敗しました");
@@ -40,7 +43,12 @@ export default function PlayersPage() {
   };
 
   const resetForm = () => {
-    setForm({ athlete_id: "", athlete_name: "", jersey_number: "" });
+    setForm({
+      athlete_id: "",
+      athlete_name: "",
+      jersey_number: "",
+      uniform_name: "",
+    });
   };
 
   const handleSubmit = async (event) => {
@@ -53,6 +61,7 @@ export default function PlayersPage() {
         athlete_id: form.athlete_id.trim(),
         athlete_name: form.athlete_name.trim(),
         jersey_number: form.jersey_number.trim(),
+        uniform_name: form.uniform_name.trim(),
       };
       await createAthleteProfile(payload);
       setSubmitStatus("success");
@@ -104,20 +113,28 @@ export default function PlayersPage() {
               {athletes.map((athlete) => (
                 <Link
                   key={athlete.athlete_id}
-                  className="player-card"
+                  className="player-card player-card--jersey"
                   to={`/data/${athlete.athlete_id}`}
                 >
-                  <span className="player-card__id">
-                    #{athlete.jersey_number || "-"}
-                  </span>
-                  <span className="player-card__name">
-                    {athlete.athlete_name || "未登録"}
-                  </span>
-                  <span className="player-card__meta">
-                    {athlete.position === "GK"
-                      ? "ゴールキーパー"
-                      : "フィールドプレーヤー"}
-                  </span>
+                  <div className="player-card__jersey-wrap">
+                    <img
+                      className="player-card__jersey"
+                      src={athlete.position === "GK" ? keeperJersey : playerJersey}
+                      alt=""
+                    />
+                    <div className="player-card__overlay">
+                      <span className="player-card__number">
+                        {athlete.jersey_number || "-"}
+                      </span>
+                      <span
+                        className={`player-card__uniform-name ${getUniformNameSizeClass(
+                          athlete.uniform_name || athlete.athlete_name || ""
+                        )}`}
+                      >
+                        {(athlete.uniform_name || athlete.athlete_name || "-").toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
                 </Link>
               ))}
             </div>
@@ -171,7 +188,20 @@ export default function PlayersPage() {
                 />
               </div>
 
+              <div className="form-field">
+                <label htmlFor="uniform_name">ユニフォーム表記 (ローマ字)</label>
+                <input
+                  id="uniform_name"
+                  name="uniform_name"
+                  value={form.uniform_name}
+                  onChange={handleFormChange}
+                  placeholder="例: SATO"
+                  required
+                />
+              </div>
+
               <button
+                style={{ marginTop: 12 }}
                 className="primary-button"
                 type="submit"
                 disabled={submitStatus === "loading"}
@@ -193,5 +223,31 @@ export default function PlayersPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+function getUniformNameSizeClass(name) {
+  const length = name.replace(/\s+/g, "").length;
+  if (length >= 14) return "player-card__uniform-name--long";
+  if (length >= 10) return "player-card__uniform-name--medium";
+  return "player-card__uniform-name--short";
+}
+
+function compareAthletes(a, b) {
+  const posA = a.position === "GK" ? 0 : 1;
+  const posB = b.position === "GK" ? 0 : 1;
+  if (posA !== posB) return posA - posB;
+
+  const aNum = parseInt(a.jersey_number, 10);
+  const bNum = parseInt(b.jersey_number, 10);
+  const aHasNum = Number.isFinite(aNum);
+  const bHasNum = Number.isFinite(bNum);
+  if (aHasNum && bHasNum && aNum !== bNum) return aNum - bNum;
+  if (aHasNum && !bHasNum) return -1;
+  if (!aHasNum && bHasNum) return 1;
+
+  return String(a.jersey_number || "").localeCompare(
+    String(b.jersey_number || ""),
+    "ja"
   );
 }
