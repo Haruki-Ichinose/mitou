@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchAthletes } from "../api";
+import titleLogo from "../components/title.jpg";
 
 export default function DataListPage() {
   const [athletes, setAthletes] = useState([]);
@@ -35,7 +36,11 @@ export default function DataListPage() {
     <div className="app-shell">
       <div className="page data-list-page">
         <div className="page-bar">
-          <h1 className="page-title">Predict2Protect</h1>
+          <img
+            className="title-logo title-logo--page"
+            src={titleLogo}
+            alt="Predict2Protect"
+          />
           <Link className="ghost-button" to="/home">
             ホームへ
           </Link>
@@ -44,7 +49,6 @@ export default function DataListPage() {
         <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">Latest Data</p>
               <h2>最新選手データ一覧</h2>
             </div>
             <span className="panel-count">
@@ -66,8 +70,12 @@ export default function DataListPage() {
                   className="player-card"
                   to={`/data/${athlete.athlete_id}`}
                 >
-                  <span className="player-card__id">#{athlete.athlete_id}</span>
-                  <span className="player-card__name">{athlete.athlete_name}</span>
+                  <span className="player-card__id">
+                    #{athlete.jersey_number || "-"}
+                  </span>
+                  <span className="player-card__name">
+                    {athlete.athlete_name || "未登録"}
+                  </span>
                   <span className="player-card__meta">
                     {athlete.position === "GK" ? "ゴールキーパー" : "フィールドプレーヤー"}
                   </span>

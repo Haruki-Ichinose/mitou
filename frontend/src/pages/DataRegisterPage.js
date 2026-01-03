@@ -1,13 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { uploadWorkloadCsv } from "../api";
+import { fetchUploadHistory, uploadWorkloadCsv } from "../api";
+import titleLogo from "../components/title.jpg";
 
 export default function DataRegisterPage() {
   const [file, setFile] = useState(null);
-  const [uploadedBy, setUploadedBy] = useState("");
   const [status, setStatus] = useState("idle");
-  const [error, setError] = useState("");
   const [summary, setSummary] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [historyStatus, setHistoryStatus] = useState("idle");
+  const [historyError, setHistoryError] = useState("");
 
   const fileLabel = useMemo(() => {
     if (!file) return "CSVファイルを選択してください";
@@ -16,63 +18,88 @@ export default function DataRegisterPage() {
 
   const resetState = () => {
     setStatus("idle");
-    setError("");
     setSummary(null);
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!file) {
-      setError("CSVファイルを選択してください。");
       setStatus("error");
       return;
     }
 
     setStatus("loading");
-    setError("");
     setSummary(null);
 
     try {
-      const result = await uploadWorkloadCsv(file, uploadedBy.trim());
+      const result = await uploadWorkloadCsv(file);
       setSummary(result);
       setStatus("success");
+      loadHistory();
     } catch (err) {
-      const message =
-        err?.response?.data?.detail ||
-        err?.message ||
-        "アップロードに失敗しました。";
-      setError(message);
       setStatus("error");
     }
   };
 
-  const athletePreview = useMemo(() => {
-    if (!summary?.athletes?.length) return "";
-    const slice = summary.athletes.slice(0, 8);
-    const suffix = summary.athletes.length > slice.length ? " ..." : "";
-    return `${slice.join(", ")}${suffix}`;
+  const resultText = useMemo(() => {
+    if (!summary) return "";
+    const count = summary.athletes?.length || 0;
+    if (summary.skipped) {
+      return `結果: 既存ファイルのためスキップ / 対象選手数: ${count}名`;
+    }
+    return `結果: 成功 / 対象選手数: ${count}名`;
   }, [summary]);
+
+  const loadHistory = async () => {
+    setHistoryStatus("loading");
+    setHistoryError("");
+    try {
+      const list = await fetchUploadHistory();
+      setHistory(list);
+      setHistoryStatus("success");
+    } catch (err) {
+      console.error(err);
+      setHistoryError("履歴の取得に失敗しました");
+      setHistoryStatus("error");
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const formatDate = (value) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString("ja-JP", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
   return (
     <div className="app-shell">
       <div className="page">
         <div className="page-bar">
-          <h1 className="page-title">Predict2Protect</h1>
+          <img
+            className="title-logo title-logo--page"
+            src={titleLogo}
+            alt="Predict2Protect"
+          />
           <Link className="ghost-button" to="/home">
             ホームへ
           </Link>
         </div>
 
         <section className="panel upload-panel">
-          <p className="panel-kicker">Data Upload</p>
           <div className="panel-header">
             <div>
               <h2>CSVアップロード</h2>
-              <p className="panel-description">
-                StatsAllGroup形式のCSVをアップロードすると、日次集計と分析指標まで自動で更新します。
-              </p>
             </div>
-            <div className="panel-count">Workload</div>
           </div>
 
           <div className="upload-grid">
@@ -96,17 +123,6 @@ export default function DataRegisterPage() {
                 />
               </div>
 
-              <div className="form-field">
-                <label htmlFor="uploaded-by">アップロード者 (任意)</label>
-                <input
-                  id="uploaded-by"
-                  type="text"
-                  placeholder="例: admin / system"
-                  value={uploadedBy}
-                  onChange={(event) => setUploadedBy(event.target.value)}
-                />
-              </div>
-
               <button
                 className="primary-button"
                 type="submit"
@@ -115,49 +131,56 @@ export default function DataRegisterPage() {
                 {status === "loading" ? "アップロード中..." : "アップロード"}
               </button>
 
-              {status === "error" && (
-                <p className="status status--error">{error}</p>
+              {status === "success" && summary && (
+                <p className="status upload-result">{resultText}</p>
               )}
-              {status === "success" && summary?.skipped && (
-                <p className="status">
-                  同じCSVが既に登録済みのためスキップしました。
-                </p>
+              {status === "error" && (
+                <p className="status status--error">結果: 失敗</p>
               )}
             </form>
 
-            <div className="upload-summary">
-              <h3>アップロード結果</h3>
-              {status === "success" && summary ? (
-                <div className="upload-summary__body">
-                  <div>
-                    <span className="upload-summary__label">Upload ID</span>
-                    <span className="upload-summary__value">{summary.upload_id}</span>
-                  </div>
-                  <div>
-                    <span className="upload-summary__label">取り込み行数</span>
-                    <span className="upload-summary__value">{summary.rows_imported}</span>
-                  </div>
-                  <div>
-                    <span className="upload-summary__label">対象選手数</span>
-                    <span className="upload-summary__value">
-                      {summary.athletes?.length || 0}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="upload-summary__label">選手IDサンプル</span>
-                    <span className="upload-summary__value">{athletePreview || "-"}</span>
-                  </div>
-                  <div>
-                    <span className="upload-summary__label">重複判定</span>
-                    <span className="upload-summary__value">
-                      {summary.skipped ? `重複 (id=${summary.duplicate_of})` : "新規"}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <p className="status">
-                  まだアップロード結果はありません。
-                </p>
+            <div className="upload-history">
+              <h3>アップロード履歴</h3>
+              {historyStatus === "loading" && (
+                <p className="status">履歴を読み込み中...</p>
+              )}
+              {historyStatus === "error" && (
+                <p className="status status--error">{historyError}</p>
+              )}
+              {historyStatus === "success" && history.length === 0 && (
+                <p className="status">履歴はまだありません。</p>
+              )}
+              {historyStatus === "success" && history.length > 0 && (
+                <ul className="upload-history__list">
+                  {history.map((item) => {
+                    let statusLabel = "失敗";
+                    if (item.status === "success") {
+                      statusLabel = "成功";
+                    } else if (item.status === "pending") {
+                      statusLabel = "処理中";
+                    }
+                    return (
+                      <li key={item.upload_id} className="upload-history__item">
+                        <div className="upload-history__main">
+                          <span className="upload-history__file">
+                            {item.filename || "-"}
+                          </span>
+                          <span className="upload-history__date">
+                            {formatDate(item.uploaded_at)}
+                          </span>
+                        </div>
+                        <div className="upload-history__meta">
+                          <span
+                            className={`upload-history__status upload-history__status--${item.status}`}
+                          >
+                            {statusLabel}
+                          </span>
+                          <span>対象選手数: {item.athletes}名</span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </div>
           </div>

@@ -3,6 +3,7 @@ from tempfile import NamedTemporaryFile
 
 from django.conf import settings
 from django.utils.dateparse import parse_date
+from django.db.models import Count
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -19,7 +20,9 @@ from workload.services import (
 
 from workload.models import (
     Athlete,
+    DataUpload,
     GpsDaily,
+    GpsSessionRaw,
     WorkloadFeaturesDaily,
 )
 
@@ -81,21 +84,63 @@ class WorkloadIngestionView(APIView):
 
 class WorkloadAthleteListView(APIView):
     def get(self, request):
-        # ★修正: 集計処理を削除し、DBに保存されたポジション情報をそのまま返す
-        qs = Athlete.objects.all().order_by("athlete_id")
+        # 登録済み（名前と背番号がある）選手のみ表示
+        qs = Athlete.objects.filter(
+            athlete_name__gt="", jersey_number__gt=""
+        ).order_by("jersey_number", "athlete_name")
         data = []
         for a in qs:
-            # 名前が空ならIDを表示名にする
-            display_name = a.athlete_name if a.athlete_name else a.athlete_id
-            
             data.append({
                 "athlete_id": a.athlete_id,
-                "athlete_name": display_name,
+                "athlete_name": a.athlete_name,
+                "jersey_number": a.jersey_number,
                 "is_active": a.is_active,
                 "position": a.position  # ★DBの値 ("GK" or "FP")
             })
             
         return Response(data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        athlete_id = str(request.data.get("athlete_id", "")).strip()
+        athlete_name = str(request.data.get("athlete_name", "")).strip()
+        jersey_number = str(request.data.get("jersey_number", "")).strip()
+
+        if not athlete_id:
+            return Response(
+                {"detail": "athlete_id を指定してください。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not athlete_name:
+            return Response(
+                {"detail": "athlete_name を指定してください。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not jersey_number:
+            return Response(
+                {"detail": "jersey_number を指定してください。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        athlete, created = Athlete.objects.update_or_create(
+            athlete_id=athlete_id,
+            defaults={
+                "athlete_name": athlete_name,
+                "jersey_number": jersey_number,
+                "is_active": True,
+            },
+        )
+
+        return Response(
+            {
+                "athlete_id": athlete.athlete_id,
+                "athlete_name": athlete.athlete_name,
+                "jersey_number": athlete.jersey_number,
+                "is_active": athlete.is_active,
+                "position": athlete.position,
+                "created": created,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 class WorkloadAthleteTimeseriesView(APIView):
     def get(self, request, athlete_id: str):
@@ -163,3 +208,39 @@ class WorkloadAthleteTimeseriesView(APIView):
             })
 
         return Response(out, status=status.HTTP_200_OK)
+
+
+class WorkloadUploadHistoryView(APIView):
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+
+        uploads = DataUpload.objects.order_by("-uploaded_at")[:limit]
+        upload_ids = [upload.id for upload in uploads]
+
+        stats_map = {}
+        if upload_ids:
+            stats = (
+                GpsSessionRaw.objects.filter(upload_id__in=upload_ids)
+                .values("upload_id")
+                .annotate(rows=Count("id"), athletes=Count("athlete_id", distinct=True))
+            )
+            stats_map = {row["upload_id"]: row for row in stats}
+
+        data = []
+        for upload in uploads:
+            stat = stats_map.get(upload.id, {})
+            data.append(
+                {
+                    "upload_id": upload.id,
+                    "filename": upload.source_filename,
+                    "uploaded_at": upload.uploaded_at,
+                    "status": upload.parse_status,
+                    "rows": stat.get("rows", 0),
+                    "athletes": stat.get("athletes", 0),
+                }
+            )
+
+        return Response(data, status=status.HTTP_200_OK)
