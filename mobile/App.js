@@ -1,6 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Animated,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,73 +17,109 @@ import {
 import axios from 'axios';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import {
-  VictoryArea,
-  VictoryAxis,
-  VictoryChart,
-  VictoryLine,
-  VictoryScatter,
-  VictoryTheme,
-  VictoryTooltip,
-  VictoryVoronoiContainer,
-} from 'victory-native';
 
-const SAFE_ACWR_MIN = 0.8;
-const SAFE_ACWR_MAX = 1.3;
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8000/api';
+
+const FONT_DISPLAY = Platform.select({
+  ios: 'AvenirNextCondensed-DemiBold',
+  android: 'sans-serif-condensed',
+  default: 'System',
+});
+const FONT_BODY = Platform.select({
+  ios: 'Avenir Next',
+  android: 'sans-serif',
+  default: 'System',
+});
+const FONT_BODY_BOLD = Platform.select({
+  ios: 'AvenirNext-Bold',
+  android: 'sans-serif-medium',
+  default: 'System',
+});
+const titleLogo = require('./assets/title.jpg');
+
+const RISK_META = {
+  risky: {
+    label: 'Risky',
+    title: '負荷が高い可能性があります',
+    message: '今日のコンディションは要注意です。',
+    color: '#dc2626',
+    background: 'rgba(220, 38, 38, 0.12)',
+    border: 'rgba(220, 38, 38, 0.4)',
+  },
+  caution: {
+    label: 'Caution',
+    title: '注意レベルです',
+    message: '強度を意識しながら調整しましょう。',
+    color: '#f59e0b',
+    background: 'rgba(245, 158, 11, 0.16)',
+    border: 'rgba(245, 158, 11, 0.4)',
+  },
+  safety: {
+    label: 'Safety',
+    title: 'リスクは低めです',
+    message: '良いペースで継続できています。',
+    color: '#16a34a',
+    background: 'rgba(22, 163, 74, 0.12)',
+    border: 'rgba(22, 163, 74, 0.4)',
+  },
+};
 
 export default function App() {
   const [athleteInput, setAthleteInput] = useState('');
   const [selectedAthlete, setSelectedAthlete] = useState(null);
-  const [records, setRecords] = useState([]);
-  const [chartData, setChartData] = useState([]);
   const [latestRecord, setLatestRecord] = useState(null);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
-  const metricKey = selectedAthlete?.metricKey || 'acwr_total_distance';
-  const metricLabel = selectedAthlete?.metricLabel || '総走行距離';
 
-  const chartMetrics = useMemo(() => {
-    if (!chartData.length) {
-      return {
-        maxValue: 2,
-        yTicks: createTicks(0, 2, 5),
-        dateTicks: [],
-        rangeStart: null,
-        rangeEnd: null,
-        exceededMax: false,
-      };
+  const loginAnim = useRef(new Animated.Value(0)).current;
+  const homeAnims = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
+
+  const metricKey =
+    selectedAthlete?.position === 'GK' ? 'acwr_dive' : 'acwr_total_distance';
+  const metricLabel =
+    selectedAthlete?.position === 'GK' ? 'ダイブ負荷' : '総走行距離';
+
+  const riskMeta = useMemo(
+    () => getRiskMeta(selectedAthlete?.riskLevel),
+    [selectedAthlete?.riskLevel]
+  );
+
+  useEffect(() => {
+    if (!selectedAthlete) {
+      loginAnim.setValue(0);
+      Animated.timing(loginAnim, {
+        toValue: 1,
+        duration: 520,
+        useNativeDriver: true,
+      }).start();
     }
+  }, [selectedAthlete, loginAnim]);
 
-    const numeric = chartData.map((point) => point.y).filter((y) => typeof y === 'number');
-    const exceededMax = numeric.some((value) => value > 2);
-    const highest = numeric.length ? Math.max(...numeric) : 2;
-    const adjustedMax = exceededMax
-      ? Math.max(Math.ceil((highest + 0.05) * 10) / 10, 2.1)
-      : 2;
-    const maxValue = Math.max(adjustedMax, SAFE_ACWR_MAX);
-
-    const timestamps = chartData.map((point) => point.x.getTime());
-    const rangeStart = new Date(Math.min(...timestamps));
-    const rangeEnd = new Date(Math.max(...timestamps));
-
-    return {
-      maxValue,
-      yTicks: createTicks(0, maxValue, 5),
-      dateTicks: createDateTicks(rangeStart.getTime(), rangeEnd.getTime(), 4).map(
-        (tick) => new Date(tick)
-      ),
-      rangeStart,
-      rangeEnd,
-      exceededMax,
-    };
-  }, [chartData]);
+  useEffect(() => {
+    if (selectedAthlete) {
+      homeAnims.forEach((anim) => anim.setValue(0));
+      Animated.stagger(
+        140,
+        homeAnims.map((anim) =>
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 420,
+            useNativeDriver: true,
+          })
+        )
+      ).start();
+    }
+  }, [selectedAthlete, homeAnims]);
 
   const handleLogin = async () => {
     const keyword = athleteInput.trim();
     if (!keyword) {
-      setError('選手名または選手IDを入力してください。');
+      setError('IDを入力してください。');
       return;
     }
 
@@ -92,11 +131,11 @@ export default function App() {
         `${API_BASE_URL}/workload/athletes/`
       );
       const athleteList = normalizeAthletes(athleteResponse.data);
-      const athlete = findAthlete(athleteList, keyword);
+      const athlete = findAthleteByJersey(athleteList, keyword);
 
       if (!athlete) {
         setStatus('idle');
-        setError('該当する選手が見つかりません。');
+        setError('該当するIDが見つかりません。');
         return;
       }
 
@@ -105,22 +144,22 @@ export default function App() {
       );
       const normalized = normalizeRecords(timeseriesResponse.data);
       const sorted = [...normalized].sort((a, b) => a.dateObj - b.dateObj);
-      const latest = sorted[sorted.length - 1];
-      const metricKey =
-        athlete.position === 'GK' ? 'acwr_dive' : 'acwr_total_distance';
-      const metricLabel =
-        athlete.position === 'GK' ? 'ダイブ負荷' : '総走行距離';
-      const points = buildChartData(sorted, latest, metricKey);
+      const latest = sorted[sorted.length - 1] || null;
+      const riskLevel = normalizeRiskLevel(
+        latest?.workload?.risk_level || athlete.risk_level
+      );
+      const riskReasons = Array.isArray(latest?.workload?.risk_reasons)
+        ? latest.workload.risk_reasons
+        : [];
 
-      setRecords(sorted);
       setLatestRecord(latest);
-      setChartData(points);
       setSelectedAthlete({
         id: String(athlete.athlete_id),
-        name: athlete.athlete_name || `選手 ${athlete.athlete_id}`,
+        name: athlete.athlete_name || `選手 ${athlete.jersey_number}`,
+        jerseyNumber: athlete.jersey_number,
         position: athlete.position || 'FP',
-        metricKey,
-        metricLabel,
+        riskLevel,
+        riskReasons,
       });
       setStatus('loaded');
     } catch (err) {
@@ -135,11 +174,14 @@ export default function App() {
 
   const handleReset = () => {
     setSelectedAthlete(null);
-    setRecords([]);
-    setChartData([]);
     setLatestRecord(null);
+    setAthleteInput('');
     setError('');
     setStatus('idle');
+  };
+
+  const handleDetailPress = () => {
+    Alert.alert('準備中', '詳細画面は準備中です。');
   };
 
   return (
@@ -152,131 +194,147 @@ export default function App() {
           behavior={Platform.select({ ios: 'padding', android: undefined })}
         >
           {selectedAthlete ? (
-            <ScrollView contentContainerStyle={styles.scrollContainer}>
-              <View style={styles.header}>
-                <View>
-                  <Text style={styles.kicker}>ACWR Dashboard</Text>
-                  <Text style={styles.title}>{selectedAthlete.name}</Text>
-                  <Text style={styles.subtitle}>ID: {selectedAthlete.id}</Text>
+            <ScrollView
+              contentContainerStyle={styles.homeContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.headerRow}>
+                <View style={styles.headerLeft}>
+                  <Image
+                    source={titleLogo}
+                    style={styles.logoSmall}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.screenTitle}>ホーム</Text>
+                  <Text style={styles.subTitle}>
+                    {selectedAthlete.name} #{selectedAthlete.jerseyNumber || '-'}
+                  </Text>
                 </View>
-                <TouchableOpacity style={styles.linkButton} onPress={handleReset}>
-                  <Text style={styles.linkButtonText}>別の選手を選ぶ</Text>
+                <TouchableOpacity style={styles.ghostButton} onPress={handleReset}>
+                  <Text style={styles.ghostButtonText}>選手切替</Text>
                 </TouchableOpacity>
               </View>
 
-              {status === 'loading' && (
-                <View style={styles.banner}>
-                  <ActivityIndicator color="#7a2e1d" />
-                  <Text style={styles.bannerText}>データ取得中です…</Text>
+              <Animated.View
+                style={[
+                  styles.riskCard,
+                  {
+                    backgroundColor: riskMeta.background,
+                    borderColor: riskMeta.border,
+                  },
+                  buildFadeSlide(homeAnims[0]),
+                ]}
+              >
+                <View style={styles.riskHeader}>
+                  <Text style={[styles.riskLabel, { color: riskMeta.color }]}>
+                    {riskMeta.label}
+                  </Text>
+                  <Text style={styles.riskTag}>Risk Level</Text>
                 </View>
-              )}
-              {status === 'error' && (
-                <View style={[styles.banner, styles.errorBanner]}>
-                  <Text style={styles.bannerText}>{error}</Text>
-                </View>
-              )}
+                <Text style={styles.riskTitle}>{riskMeta.title}</Text>
+                <Text style={styles.riskMessage}>
+                  {selectedAthlete.riskReasons?.length
+                    ? `主な指標: ${selectedAthlete.riskReasons.join(' / ')}`
+                    : riskMeta.message}
+                </Text>
+              </Animated.View>
 
-              {status === 'loaded' && latestRecord && (
-                <View style={styles.summaryCard}>
-                  <View>
-                    <Text style={styles.summaryLabel}>最新日付</Text>
-                    <Text style={styles.summaryValue}>
-                      {formatFullDate(latestRecord.dateObj)}
-                    </Text>
-                  </View>
-                  <View>
-                    <Text style={styles.summaryLabel}>
-                      最新ACWR（{metricLabel}）
-                    </Text>
-                    <Text style={styles.summaryValue}>
-                      {typeof latestRecord.workload?.[metricKey] === 'number'
-                        ? latestRecord.workload[metricKey].toFixed(3)
-                        : '算出不可'}
-                    </Text>
-                  </View>
-                </View>
-              )}
+              <Animated.View
+                style={[styles.actionWrapper, buildFadeSlide(homeAnims[1])]}
+              >
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handleDetailPress}
+                >
+                  <Text style={styles.primaryButtonText}>詳細な結果を見る</Text>
+                </TouchableOpacity>
+              </Animated.View>
 
-              {status === 'loaded' && chartData.length > 0 && (
-                <View style={styles.card}>
-                  <View style={styles.cardHeader}>
-                    <View>
-                      <Text style={styles.cardTitle}>ACWR推移 (直近30日)</Text>
-                      <Text style={styles.cardSubTitle}>
-                        適正範囲は {SAFE_ACWR_MIN} - {SAFE_ACWR_MAX} です。
-                      </Text>
-                    </View>
-                    {chartMetrics.exceededMax && (
-                      <Text style={styles.alertText}>
-                        ACWRが2.0を超えたため縦軸を拡張しています。
-                      </Text>
-                    )}
-                  </View>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.chartScroll}
-                  >
-                    <AcwrChart
-                      data={chartData}
-                      rangeStart={chartMetrics.rangeStart}
-                      rangeEnd={chartMetrics.rangeEnd}
-                      maxValue={chartMetrics.maxValue}
-                      yTicks={chartMetrics.yTicks}
-                      dateTicks={chartMetrics.dateTicks}
-                    />
-                  </ScrollView>
-                </View>
-              )}
-
-              {status === 'loaded' && chartData.length === 0 && (
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>ACWR推移</Text>
-                  <Text style={styles.cardSubTitle}>
-                    該当期間のACWRデータがありません。
+              <Animated.View
+                style={[styles.infoCard, buildFadeSlide(homeAnims[2])]}
+              >
+                <Text style={styles.cardTitle}>最新データ</Text>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>ポジション</Text>
+                  <Text style={styles.infoValue}>
+                    {formatPosition(selectedAthlete.position)}
                   </Text>
                 </View>
-              )}
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>最新更新日</Text>
+                  <Text style={styles.infoValue}>
+                    {latestRecord
+                      ? formatFullDate(latestRecord.dateObj)
+                      : 'データなし'}
+                  </Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>
+                    最新ACWR（{metricLabel}）
+                  </Text>
+                  <Text style={styles.infoValue}>
+                    {formatMetricValue(latestRecord?.workload?.[metricKey])}
+                  </Text>
+                </View>
+              </Animated.View>
             </ScrollView>
           ) : (
-            <View style={styles.loginContainer}>
-              <View style={styles.loginHeader}>
-                <Text style={styles.kicker}>ACWR Mobile</Text>
-                <Text style={styles.title}>選手ログイン</Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>選手ID / 選手名</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="例: 12 または 佐藤太郎"
-                  placeholderTextColor="#b36b2f"
-                  value={athleteInput}
-                  autoCapitalize="none"
-                  onChangeText={setAthleteInput}
-                  returnKeyType="done"
-                  onSubmitEditing={handleLogin}
+            <ScrollView
+              contentContainerStyle={styles.loginContainer}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.hero}>
+                <Image
+                  source={titleLogo}
+                  style={styles.logoLarge}
+                  resizeMode="contain"
                 />
               </View>
 
-              {error && (
-                <View style={[styles.banner, styles.errorBanner]}>
-                  <Text style={styles.bannerText}>{error}</Text>
-                </View>
-              )}
-
-              <TouchableOpacity
-                style={[styles.primaryButton, status === 'loading' && styles.primaryButtonDisabled]}
-                onPress={handleLogin}
-                disabled={status === 'loading'}
+              <Animated.View
+                style={[styles.loginCard, buildFadeSlide(loginAnim)]}
               >
-                {status === 'loading' ? (
-                  <ActivityIndicator color="#fff8ed" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>ログイン</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+                <View style={styles.formField}>
+                  <Text style={styles.label}>ID</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="IDを入力してください"
+                    placeholderTextColor="rgba(15, 23, 42, 0.4)"
+                    value={athleteInput}
+                    autoCapitalize="none"
+                    keyboardType="number-pad"
+                    onChangeText={setAthleteInput}
+                    returnKeyType="go"
+                    onSubmitEditing={handleLogin}
+                  />
+                </View>
+
+                {error ? (
+                  <View style={styles.errorCard}>
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                ) : null}
+
+                <TouchableOpacity
+                  style={[
+                    styles.primaryButton,
+                    styles.loginButton,
+                    status === 'loading' && styles.primaryButtonDisabled,
+                  ]}
+                  onPress={handleLogin}
+                  disabled={status === 'loading'}
+                >
+                  {status === 'loading' ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={[styles.primaryButtonText, styles.loginButtonText]}>
+                      ログイン
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            </ScrollView>
           )}
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -284,87 +342,34 @@ export default function App() {
   );
 }
 
-function AcwrChart({ data, rangeStart, rangeEnd, maxValue, yTicks, dateTicks }) {
-  if (!data.length || !rangeStart || !rangeEnd) {
-    return null;
+function buildFadeSlide(animatedValue) {
+  return {
+    opacity: animatedValue,
+    transform: [
+      {
+        translateY: animatedValue.interpolate({
+          inputRange: [0, 1],
+          outputRange: [18, 0],
+        }),
+      },
+    ],
+  };
+}
+
+function getRiskMeta(level) {
+  const normalized = normalizeRiskLevel(level);
+  return RISK_META[normalized] || RISK_META.safety;
+}
+
+function normalizeRiskLevel(value) {
+  if (!value || typeof value !== 'string') {
+    return 'safety';
   }
-
-  const safeBand = [
-    { x: rangeStart, y: SAFE_ACWR_MAX, y0: SAFE_ACWR_MIN },
-    { x: rangeEnd, y: SAFE_ACWR_MAX, y0: SAFE_ACWR_MIN },
-  ];
-
-  return (
-    <VictoryChart
-      height={340}
-      width={780}
-      padding={{ top: 24, bottom: 56, left: 72, right: 32 }}
-      theme={VictoryTheme.material}
-      scale={{ x: 'time', y: 'linear' }}
-      domain={{ x: [rangeStart, rangeEnd], y: [0, maxValue] }}
-      containerComponent={
-        <VictoryVoronoiContainer
-          voronoiBlacklist={['safe-band', 'line']}
-          labels={({ datum }) =>
-            `${formatFullDate(datum.x)}\n${typeof datum.y === 'number' ? datum.y.toFixed(3) : '-'}`
-          }
-          labelComponent={
-            <VictoryTooltip
-              style={{ fontSize: 12, fill: '#4a1f1f' }}
-              flyoutStyle={{ fill: '#fff7eb', stroke: '#dd2476' }}
-              constrainToVisibleArea
-            />
-          }
-        />
-      }
-    >
-      <VictoryArea
-        name="safe-band"
-        data={safeBand}
-        style={{
-          data: {
-            fill: 'rgba(120, 202, 136, 0.35)', // yellow-green band to match admin
-            stroke: '#16a34a',
-            strokeWidth: 2,
-          },
-        }}
-      />
-      <VictoryAxis
-        tickValues={dateTicks}
-        tickFormat={(tick) => formatShortDate(tick)}
-        style={{
-          axis: { stroke: '#b64b12' },
-          tickLabels: { fill: '#4a1f1f', fontSize: 12, padding: 12, angle: -20 },
-          grid: { stroke: '#f2c48c', strokeDasharray: '4,4' },
-        }}
-      />
-      <VictoryAxis
-        dependentAxis
-        tickValues={yTicks}
-        tickFormat={(tick) => tick.toFixed(1)}
-        style={{
-          axis: { stroke: '#b64b12' },
-          tickLabels: { fill: '#4a1f1f', fontSize: 12, padding: 8 },
-          grid: { stroke: '#f2c48c', strokeDasharray: '4,4' },
-        }}
-      />
-      <VictoryLine
-        name="line"
-        data={data}
-        style={{
-          data: { stroke: '#dd2476', strokeWidth: 3 },
-        }}
-      />
-      <VictoryScatter
-        name="points"
-        data={data}
-        size={5}
-        style={{
-          data: { fill: '#fff2d5', stroke: '#dd2476', strokeWidth: 2 },
-        }}
-      />
-    </VictoryChart>
-  );
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'risky' || normalized === 'caution' || normalized === 'safety') {
+    return normalized;
+  }
+  return 'safety';
 }
 
 function normalizeAthletes(rawAthletes) {
@@ -380,26 +385,24 @@ function normalizeAthletes(rawAthletes) {
       return {
         athlete_id: item.athlete_id,
         athlete_name: item.athlete_name || '',
+        jersey_number:
+          item.jersey_number !== undefined && item.jersey_number !== null
+            ? String(item.jersey_number)
+            : '',
         position: item.position || 'FP',
+        risk_level: item.risk_level || 'safety',
         is_active: item.is_active ?? true,
       };
     })
     .filter(Boolean);
 }
 
-function findAthlete(athletes, keyword) {
-  const normalized = keyword.trim().toLowerCase();
-  const idMatch = athletes.find(
-    (athlete) => String(athlete.athlete_id) === keyword.trim()
-  );
-  if (idMatch) {
-    return idMatch;
-  }
-
+function findAthleteByJersey(athletes, jerseyNumber) {
+  const normalized = jerseyNumber.trim();
   return athletes.find(
     (athlete) =>
-      typeof athlete.athlete_name === 'string' &&
-      athlete.athlete_name.trim().toLowerCase() === normalized
+      typeof athlete.jersey_number === 'string' &&
+      athlete.jersey_number.trim() === normalized
   );
 }
 
@@ -425,66 +428,15 @@ function normalizeRecords(rawRecords) {
     .filter(Boolean);
 }
 
-function buildChartData(records, latestRecord, metricKey) {
-  if (!latestRecord) {
-    return [];
+function formatMetricValue(value) {
+  if (typeof value === 'number') {
+    return value.toFixed(3);
   }
-  const rangeEnd = latestRecord.dateObj;
-  const rangeStart = new Date(rangeEnd);
-  rangeStart.setDate(rangeStart.getDate() - 29);
-
-  return records
-    .filter(
-      (record) => record.dateObj >= rangeStart && record.dateObj <= rangeEnd
-    )
-    .filter((record) => typeof record.workload?.[metricKey] === 'number')
-    .map((record) => ({
-      x: record.dateObj,
-      y: record.workload[metricKey],
-    }));
+  return '算出中';
 }
 
-function createTicks(min, max, count) {
-  if (count <= 1) {
-    return [max];
-  }
-  const step = (max - min) / (count - 1);
-  return Array.from({ length: count }, (_, index) => min + step * index);
-}
-
-function createDateTicks(min, max, count) {
-  const minRounded = Math.round(min);
-  const maxRounded = Math.round(max);
-
-  if (max <= min || count <= 1) {
-    return [minRounded];
-  }
-
-  const step = (max - min) / (count - 1);
-  const uniqueTicks = [];
-
-  for (let index = 0; index < count; index += 1) {
-    const tick = Math.round(min + step * index);
-    if (!uniqueTicks.includes(tick)) {
-      uniqueTicks.push(tick);
-    }
-  }
-
-  if (!uniqueTicks.includes(minRounded)) {
-    uniqueTicks.unshift(minRounded);
-  }
-  if (!uniqueTicks.includes(maxRounded)) {
-    uniqueTicks.push(maxRounded);
-  }
-
-  return uniqueTicks.sort((a, b) => a - b);
-}
-
-function formatShortDate(dateObj) {
-  return dateObj.toLocaleDateString('ja-JP', {
-    month: '2-digit',
-    day: '2-digit',
-  });
+function formatPosition(position) {
+  return position === 'GK' ? 'ゴールキーパー' : 'フィールドプレーヤー';
 }
 
 function formatFullDate(dateObj) {
@@ -498,162 +450,214 @@ function formatFullDate(dateObj) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f6d365',
+    backgroundColor: '#fff7ed',
   },
   flex: {
     flex: 1,
   },
-  scrollContainer: {
-    padding: 20,
-    gap: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-  },
-  kicker: {
-    color: '#7a2e1d',
-    fontSize: 16,
-    letterSpacing: 1.1,
-  },
-  title: {
-    color: '#9d2121',
-    fontSize: 32,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  linkButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    borderColor: '#dd2476',
-    borderWidth: 1,
-  },
-  linkButtonText: {
-    color: '#dd2476',
-    fontWeight: '700',
-  },
-  banner: {
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
+  hero: {
     alignItems: 'center',
     gap: 10,
   },
-  errorBanner: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
+  logoLarge: {
+    width: 360,
+    height: 170,
   },
-  bannerText: {
-    color: '#b91c1c',
-    fontSize: 14,
-  },
-  summaryCard: {
-    backgroundColor: 'rgba(255, 231, 186, 0.92)',
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderWidth: 2,
-    borderColor: 'rgba(157, 33, 33, 0.18)',
-    shadowColor: 'rgba(122, 46, 29, 0.28)',
-    shadowOpacity: 0.4,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
-  },
-  summaryLabel: {
-    color: '#7a2e1d',
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  summaryValue: {
-    color: '#9d2121',
-    fontSize: 20,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-  card: {
-    backgroundColor: 'rgba(255, 231, 186, 0.92)',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: 'rgba(157, 33, 33, 0.18)',
-    gap: 12,
-    shadowColor: 'rgba(122, 46, 29, 0.28)',
-    shadowOpacity: 0.4,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  cardTitle: {
-    color: '#9d2121',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  cardSubTitle: {
-    color: '#7a2e1d',
-    marginTop: 4,
-  },
-  alertText: {
-    color: '#b64b12',
-    fontSize: 12,
-    textAlign: 'right',
-  },
-  chartScroll: {
-    paddingVertical: 4,
+  heroSubTitle: {
+    fontFamily: FONT_BODY,
+    fontSize: 15,
+    color: '#475569',
   },
   loginContainer: {
-    flex: 1,
-    backgroundColor: '#f6d365',
+    flexGrow: 1,
     padding: 24,
     justifyContent: 'center',
-    gap: 24,
+    gap: 26,
   },
-  loginHeader: {
+  loginCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    borderRadius: 28,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.12)',
+    gap: 18,
+    shadowColor: 'rgba(15, 23, 42, 0.15)',
+    shadowOpacity: 0.6,
+    shadowOffset: { width: 0, height: 16 },
+    shadowRadius: 28,
+    elevation: 4,
+  },
+  formField: {
     gap: 8,
   },
-  inputGroup: {
-    gap: 8,
-  },
-  inputLabel: {
-    color: '#7a2e1d',
-    fontSize: 16,
+  label: {
+    fontFamily: FONT_BODY_BOLD,
+    fontSize: 22,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#475569',
   },
   input: {
-    backgroundColor: '#fff2d5',
-    color: '#4a1f1f',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderWidth: 1,
-    borderColor: 'rgba(157, 33, 33, 0.25)',
-    fontSize: 18,
+    borderColor: 'rgba(15, 23, 42, 0.15)',
+    fontSize: 24,
+    fontFamily: FONT_BODY_BOLD,
+  },
+  errorCard: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(220, 38, 38, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.35)',
+  },
+  errorText: {
+    color: '#b91c1c',
+    fontSize: 14,
+    fontFamily: FONT_BODY_BOLD,
   },
   primaryButton: {
-    backgroundColor: '#dd2476',
+    backgroundColor: '#b91c1c',
     paddingVertical: 16,
-    borderRadius: 14,
+    borderRadius: 16,
     alignItems: 'center',
-    shadowColor: 'rgba(221, 36, 118, 0.6)',
-    shadowOpacity: 0.6,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 16,
-    elevation: 3,
+    shadowColor: 'rgba(185, 28, 28, 0.35)',
+    shadowOpacity: 0.5,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    elevation: 4,
   },
   primaryButtonDisabled: {
     opacity: 0.7,
   },
   primaryButtonText: {
-    color: '#fff8ed',
+    color: '#ffffff',
+    fontSize: 17,
+    fontFamily: FONT_BODY_BOLD,
+  },
+  loginButton: {
+    paddingVertical: 20,
+  },
+  loginButtonText: {
+    fontSize: 20,
+  },
+  homeContainer: {
+    padding: 22,
+    gap: 18,
+    paddingBottom: 32,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 16,
+  },
+  headerLeft: {
+    gap: 6,
+  },
+  logoSmall: {
+    width: 130,
+    height: 42,
+  },
+  screenTitle: {
+    fontFamily: FONT_DISPLAY,
+    fontSize: 36,
+    color: '#0f172a',
+  },
+  subTitle: {
+    fontFamily: FONT_BODY,
+    fontSize: 14,
+    color: '#475569',
+  },
+  ghostButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.16)',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+  },
+  ghostButtonText: {
+    fontFamily: FONT_BODY_BOLD,
+    color: '#0f172a',
+    fontSize: 12,
+  },
+  riskCard: {
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    gap: 10,
+    shadowColor: 'rgba(15, 23, 42, 0.1)',
+    shadowOpacity: 0.4,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 20,
+    elevation: 3,
+  },
+  riskHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  riskLabel: {
+    fontFamily: FONT_BODY_BOLD,
     fontSize: 18,
-    fontWeight: '700',
+  },
+  riskTag: {
+    fontFamily: FONT_BODY,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    color: '#475569',
+  },
+  riskTitle: {
+    fontFamily: FONT_DISPLAY,
+    fontSize: 24,
+    color: '#0f172a',
+  },
+  riskMessage: {
+    fontFamily: FONT_BODY,
+    fontSize: 14,
+    color: '#475569',
+  },
+  actionWrapper: {
+    alignItems: 'stretch',
+  },
+  infoCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.12)',
+    gap: 12,
+    shadowColor: 'rgba(15, 23, 42, 0.1)',
+    shadowOpacity: 0.4,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 20,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontFamily: FONT_BODY_BOLD,
+    fontSize: 16,
+    color: '#0f172a',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  infoLabel: {
+    fontFamily: FONT_BODY,
+    fontSize: 13,
+    color: '#475569',
+  },
+  infoValue: {
+    fontFamily: FONT_BODY_BOLD,
+    fontSize: 14,
+    color: '#0f172a',
   },
 });
