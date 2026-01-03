@@ -23,6 +23,15 @@ from .models import (
     WorkloadFeaturesDaily,
 )
 
+ACWR_ALPHA_ACUTE = 2 / (7 + 1)    # EWMA近似で7日急性
+ACWR_ALPHA_CHRONIC = 2 / (28 + 1)  # EWMA近似で28日慢性
+ACWR_FLOOR = 1e-3
+ACWR_BASELINE_FLOOR_RATIO = 0.3
+MONOTONY_WINDOW = 7
+EPS = 1e-6
+MIN_DIST_FOR_DECEL_DENSITY = 100  # meters
+MIN_DIST_FOR_MECH_EFF = 500       # meters
+
 
 class WorkloadIngestionError(Exception):
     """Raised when workload CSV ingestion fails."""
@@ -225,7 +234,7 @@ def athlete_ids_for_upload(upload_id: int) -> list[str]:
 def detect_positions(
     *,
     athlete_ids: Iterable[str] | None = None,
-    threshold: float = 100,
+    threshold: float = 50,
 ) -> dict:
     athlete_ids_list = list(athlete_ids) if athlete_ids else []
 
@@ -298,8 +307,10 @@ def rebuild_gps_daily(
         "total_jumps",
         "velocity_band5_total_distance",
         "velocity_band6_total_distance",
+        "ima_band2_decel_count",
         "ima_band2_left_count",
         "ima_band2_right_count",
+        "ima_band3_decel_count",
         "total_dive_load_left",
         "total_dive_load_right",
         "total_dive_load_centre",
@@ -319,7 +330,7 @@ def rebuild_gps_daily(
         ima_l = sums["ima_band2_left_count"]
         ima_r = sums["ima_band2_right_count"]
         ima_total = ima_l + ima_r
-        ima_asym = abs((ima_l - ima_r) / ima_total * 100) if ima_total > 10 else None
+        ima_asym = abs(ima_l - ima_r) / max(ima_total, EPS) if ima_total > 10 else None
 
         dive_load = (
             sums["total_dive_load_left"]
@@ -329,7 +340,7 @@ def rebuild_gps_daily(
         dive_l = sums["dive_left_count"]
         dive_r = sums["dive_right_count"]
         dive_total = dive_l + dive_r + sums["dive_centre_count"]
-        dive_asym = abs((dive_l - dive_r) / dive_total * 100) if dive_total > 5 else None
+        dive_asym = abs(dive_l - dive_r) / max(dive_total, EPS) if dive_total > 5 else None
 
         daily_objects.append(
             GpsDaily(
@@ -378,16 +389,94 @@ def rebuild_gps_daily(
     return len(daily_objects)
 
 
-def calc_acwr_series(series, acute=7, chronic=28):
-    acute_load = series.rolling(window=acute, min_periods=1).mean()
-    chronic_load = series.rolling(window=chronic, min_periods=1).mean()
-    return np.where(chronic_load > 0, acute_load / chronic_load, 0)
+def calc_acwr_ewma(series, alpha_fast=ACWR_ALPHA_ACUTE, alpha_slow=ACWR_ALPHA_CHRONIC):
+    acute = series.ewm(alpha=alpha_fast, adjust=False).mean()
+    chronic_raw = series.ewm(alpha=alpha_slow, adjust=False).mean()
+    baseline = series.mean()
+    floor = max(baseline * ACWR_BASELINE_FLOOR_RATIO, ACWR_FLOOR)
+    chronic = np.maximum(chronic_raw, floor)
+    ratio = acute / chronic
+    return acute.values, chronic.values, ratio.values
 
 
-def calc_monotony_series(series, window=7):
-    r_mean = series.rolling(window=window).mean()
-    r_std = series.rolling(window=window).std()
-    return np.where(r_std > 0, r_mean / r_std, 0)
+def calc_monotony_series(series, window=MONOTONY_WINDOW):
+    r_mean = series.rolling(window=window, min_periods=1).mean()
+    r_std = series.rolling(window=window, min_periods=1).std().fillna(0)
+    denom = np.maximum(r_std, EPS)
+    return (r_mean / denom).fillna(0).values
+
+
+def calc_asymmetry_series(left, right):
+    left_arr = np.array(left, dtype=float)
+    right_arr = np.array(right, dtype=float)
+    return np.abs(left_arr - right_arr) / np.maximum(left_arr + right_arr, EPS)
+
+
+def safe_number(value: float | int | None):
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if np.isfinite(v) else None
+
+
+def classify_fp(acwr_dist, acwr_hsr, monotony):
+    reasons = []
+    level = "safety"
+
+    if (acwr_dist and acwr_dist > 1.5) or (acwr_hsr and acwr_hsr > 1.5) or (monotony and monotony > 2.5):
+        level = "caution"
+        if acwr_dist and acwr_dist > 1.5:
+            reasons.append("ACWR_Dist>1.5")
+        if acwr_hsr and acwr_hsr > 1.5:
+            reasons.append("ACWR_HSR>1.5")
+        if monotony and monotony > 2.5:
+            reasons.append("Monotony>2.5")
+        return level, reasons
+
+    if (
+        (acwr_dist and 1.3 <= acwr_dist <= 1.5)
+        or (acwr_hsr and 1.3 <= acwr_hsr <= 1.5)
+        or (acwr_dist and acwr_dist < 0.8)
+        or (monotony and monotony > 2.0)
+    ):
+        level = "risky"
+        if acwr_dist and 1.3 <= acwr_dist <= 1.5:
+            reasons.append("ACWR_Dist_1.3-1.5")
+        if acwr_hsr and 1.3 <= acwr_hsr <= 1.5:
+            reasons.append("ACWR_HSR_1.3-1.5")
+        if acwr_dist and acwr_dist < 0.8:
+            reasons.append("ACWR_Dist<0.8")
+        if monotony and monotony > 2.0:
+            reasons.append("Monotony>2.0")
+
+    return level, reasons
+
+
+def classify_gk(acwr_dive, asym, monotony):
+    reasons = []
+    level = "safety"
+
+    if (acwr_dive and acwr_dive > 1.5) or (asym and asym > 0.4):
+        level = "caution"
+        if acwr_dive and acwr_dive > 1.5:
+            reasons.append("ACWR_Dive>1.5")
+        if asym and asym > 0.4:
+            reasons.append("Asym>0.4")
+        return level, reasons
+
+    if (acwr_dive and 1.3 <= acwr_dive <= 1.5) or (asym and 0.2 <= asym <= 0.4) or (monotony and monotony > 2.0):
+        level = "risky"
+        if acwr_dive and 1.3 <= acwr_dive <= 1.5:
+            reasons.append("ACWR_Dive_1.3-1.5")
+        if asym and 0.2 <= asym <= 0.4:
+            reasons.append("Asym_0.2-0.4")
+        if monotony and monotony > 2.0:
+            reasons.append("Monotony>2.0")
+
+    return level, reasons
 
 
 def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> int:
@@ -402,6 +491,7 @@ def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> in
         "total_dive_load",
         "total_jumps",
         "dive_asymmetry",
+        "metrics",
     )
     if athlete_ids_list:
         qs = qs.filter(athlete_id__in=athlete_ids_list)
@@ -442,36 +532,84 @@ def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> in
             .reset_index()
             .rename(columns={"index": "date"})
         )
+        group["metrics"] = group["metrics"].apply(lambda m: m if isinstance(m, dict) else {})
 
         is_gk = athlete_positions.get(athlete_id, "FP") == "GK"
 
-        acwr_dist = calc_acwr_series(group["total_distance"])
-        monotony = calc_monotony_series(group["total_player_load"])
+        total_distance = group["total_distance"].fillna(0).astype(float)
+        total_player_load = group["total_player_load"].fillna(0).astype(float)
+        hsr_distance = group["hsr_distance"].fillna(0).astype(float)
+        total_dive_load = group["total_dive_load"].fillna(0).astype(float)
+        total_jumps = group["total_jumps"].fillna(0).astype(float)
 
-        acwr_hsr = np.zeros(len(group))
-        acwr_dive = np.zeros(len(group))
-        acwr_jump = np.zeros(len(group))
+        metrics_series = group["metrics"].apply(lambda m: m or {})
+        decel_count = metrics_series.apply(
+            lambda m: to_float(m.get("ima_band2_decel_count")) + to_float(m.get("ima_band3_decel_count"))
+        )
+        ima_left = metrics_series.apply(lambda m: to_float(m.get("ima_band2_left_count")))
+        ima_right = metrics_series.apply(lambda m: to_float(m.get("ima_band2_right_count")))
+        dive_left = metrics_series.apply(lambda m: to_float(m.get("dive_left_count")))
+        dive_right = metrics_series.apply(lambda m: to_float(m.get("dive_right_count")))
+        dive_centre = metrics_series.apply(lambda m: to_float(m.get("dive_centre_count")))
+
+        _, _, acwr_dist = calc_acwr_ewma(total_distance)
+        monotony = calc_monotony_series(total_player_load)
+
+        acwr_hsr = np.full(len(group), np.nan)
+        acwr_dive = np.full(len(group), np.nan)
+        acwr_jump = np.full(len(group), np.nan)
         asym_val = np.zeros(len(group))
+        decel_density = np.zeros(len(group))
+        load_per_meter = np.zeros(len(group))
+
+        dist_safe = np.maximum(total_distance.values, EPS)
+        dist_km = dist_safe / 1000.0
+        decel_density = np.where(dist_safe < MIN_DIST_FOR_DECEL_DENSITY, 0.0, decel_count.values / np.maximum(dist_km, EPS))
+        load_per_meter = np.where(
+            dist_safe < MIN_DIST_FOR_MECH_EFF, np.nan, total_player_load.values / dist_safe
+        )
 
         if is_gk:
-            acwr_dive = calc_acwr_series(group["total_dive_load"])
-            acwr_jump = calc_acwr_series(group["total_jumps"])
-            asym_val = group["dive_asymmetry"].fillna(0).values
+            _, _, acwr_dive = calc_acwr_ewma(total_dive_load)
+            acwr_jump = np.full(len(group), np.nan)
+            total_dives = dive_left + dive_right + dive_centre
+            asym_val = calc_asymmetry_series(dive_left, dive_right)
+            # if no dives, treat asym=0
+            asym_val = np.where(total_dives.values <= 0, 0.0, asym_val)
         else:
-            acwr_hsr = calc_acwr_series(group["hsr_distance"])
-            asym_val = group["ima_asymmetry"].fillna(0).values
+            _, _, acwr_hsr = calc_acwr_ewma(hsr_distance)
+            asym_val = calc_asymmetry_series(ima_left, ima_right)
+            acwr_dive = np.full(len(group), np.nan)
 
         for i, row in group.iterrows():
+            acwr_dist_v = safe_number(acwr_dist[i])
+            acwr_hsr_v = safe_number(acwr_hsr[i])
+            acwr_dive_v = safe_number(acwr_dive[i])
+            acwr_jump_v = safe_number(acwr_jump[i])
+            monotony_v = safe_number(monotony[i])
+            asym_v = safe_number(asym_val[i])
+            lpm_v = safe_number(load_per_meter[i])
+            decel_density_v = safe_number(decel_density[i])
+
+            if is_gk:
+                risk_level, risk_reasons = classify_gk(acwr_dive_v, asym_v, monotony_v)
+            else:
+                risk_level, risk_reasons = classify_fp(acwr_dist_v, acwr_hsr_v, monotony_v)
+
             out_rows.append(
                 WorkloadFeaturesDaily(
                     athlete_id=athlete_id,
                     date=row["date"].date(),
-                    acwr_total_distance=acwr_dist[i],
-                    acwr_hsr=acwr_hsr[i],
-                    acwr_dive=acwr_dive[i],
-                    acwr_jump=acwr_jump[i],
-                    monotony_load=monotony[i],
-                    val_asymmetry=asym_val[i],
+                    acwr_total_distance=acwr_dist_v,
+                    acwr_hsr=acwr_hsr_v,
+                    acwr_dive=acwr_dive_v,
+                    acwr_jump=acwr_jump_v,
+                    monotony_load=monotony_v,
+                    val_asymmetry=asym_v,
+                    load_per_meter=lpm_v,
+                    decel_density=decel_density_v,
+                    risk_level=risk_level,
+                    risk_reasons=risk_reasons,
                 )
             )
 
