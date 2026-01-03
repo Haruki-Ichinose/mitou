@@ -3,7 +3,8 @@ from tempfile import NamedTemporaryFile
 
 from django.conf import settings
 from django.utils.dateparse import parse_date
-from django.db.models import Count
+from django.db.models import Count, OuterRef, Subquery, Value
+from django.db.models.functions import Coalesce
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -85,8 +86,14 @@ class WorkloadIngestionView(APIView):
 class WorkloadAthleteListView(APIView):
     def get(self, request):
         # 登録済み（名前と背番号がある）選手のみ表示
+        risk_level_sq = WorkloadFeaturesDaily.objects.filter(
+            athlete_id=OuterRef("athlete_id")
+        ).order_by("-date", "-id").values("risk_level")[:1]
+
         qs = Athlete.objects.filter(
             athlete_name__gt="", jersey_number__gt=""
+        ).annotate(
+            risk_level=Coalesce(Subquery(risk_level_sq), Value("safety"))
         ).order_by("jersey_number", "athlete_name")
         data = []
         for a in qs:
@@ -95,7 +102,8 @@ class WorkloadAthleteListView(APIView):
                 "athlete_name": a.athlete_name,
                 "jersey_number": a.jersey_number,
                 "is_active": a.is_active,
-                "position": a.position  # ★DBの値 ("GK" or "FP")
+                "position": a.position,  # ★DBの値 ("GK" or "FP")
+                "risk_level": a.risk_level,
             })
             
         return Response(data, status=status.HTTP_200_OK)
