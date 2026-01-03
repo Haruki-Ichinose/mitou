@@ -91,7 +91,7 @@ class WorkloadAthleteListView(APIView):
         ).order_by("-date", "-id").values("risk_level")[:1]
 
         qs = Athlete.objects.filter(
-            athlete_name__gt="", jersey_number__gt=""
+            athlete_name__gt="", jersey_number__gt="", uniform_name__gt=""
         ).annotate(
             risk_level=Coalesce(Subquery(risk_level_sq), Value("safety"))
         ).order_by("jersey_number", "athlete_name")
@@ -101,6 +101,7 @@ class WorkloadAthleteListView(APIView):
                 "athlete_id": a.athlete_id,
                 "athlete_name": a.athlete_name,
                 "jersey_number": a.jersey_number,
+                "uniform_name": a.uniform_name,
                 "is_active": a.is_active,
                 "position": a.position,  # ★DBの値 ("GK" or "FP")
                 "risk_level": a.risk_level,
@@ -112,6 +113,7 @@ class WorkloadAthleteListView(APIView):
         athlete_id = str(request.data.get("athlete_id", "")).strip()
         athlete_name = str(request.data.get("athlete_name", "")).strip()
         jersey_number = str(request.data.get("jersey_number", "")).strip()
+        uniform_name = str(request.data.get("uniform_name", "")).strip()
 
         if not athlete_id:
             return Response(
@@ -128,12 +130,18 @@ class WorkloadAthleteListView(APIView):
                 {"detail": "jersey_number を指定してください。"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if not uniform_name:
+            return Response(
+                {"detail": "uniform_name を指定してください。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         athlete, created = Athlete.objects.update_or_create(
             athlete_id=athlete_id,
             defaults={
                 "athlete_name": athlete_name,
                 "jersey_number": jersey_number,
+                "uniform_name": uniform_name,
                 "is_active": True,
             },
         )
@@ -143,6 +151,7 @@ class WorkloadAthleteListView(APIView):
                 "athlete_id": athlete.athlete_id,
                 "athlete_name": athlete.athlete_name,
                 "jersey_number": athlete.jersey_number,
+                "uniform_name": athlete.uniform_name,
                 "is_active": athlete.is_active,
                 "position": athlete.position,
                 "created": created,
