@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Chart } from "react-chartjs-2";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fetchAthletes, fetchTimeseries } from "../api";
 import titleLogo from "../components/title.jpg";
