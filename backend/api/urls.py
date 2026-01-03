@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     WorkloadIngestionView,
     WorkloadAthleteListView,
-    WorkloadAthleteTimeseriesView
+    WorkloadAthleteTimeseriesView,
+    WorkloadUploadHistoryView,
 )
 
 urlpatterns = [
@@ -11,5 +12,6 @@ urlpatterns = [
     # 【ここを修正】フロントエンドに合わせてパスを変更
     path('workload/athletes/<str:athlete_id>/timeseries/', WorkloadAthleteTimeseriesView.as_view(), name='workload-timeseries'),
     path('workload/ingest/', WorkloadIngestionView.as_view(), name='workload-ingest'),
+    path('workload/uploads/', WorkloadUploadHistoryView.as_view(), name='workload-uploads'),
     path('ingest/', WorkloadIngestionView.as_view(), name='ingest'),
 ]
