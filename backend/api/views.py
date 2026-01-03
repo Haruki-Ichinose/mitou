@@ -139,7 +139,8 @@ class WorkloadAthleteTimeseriesView(APIView):
         w_cols = [
             "date", 
             "acwr_total_distance", "acwr_hsr", "acwr_dive", "acwr_jump",
-            "monotony_load", "val_asymmetry"
+            "monotony_load", "val_asymmetry", "load_per_meter", "decel_density",
+            "risk_level", "risk_reasons"
         ]
         for w in wqs.values(*w_cols):
             wmap[w["date"]] = w
@@ -159,6 +160,10 @@ class WorkloadAthleteTimeseriesView(APIView):
                     "acwr_jump": w.get("acwr_jump") if w else None,
                     "monotony_load": w.get("monotony_load") if w else None,
                     "val_asymmetry": w.get("val_asymmetry") if w else None,
+                    "load_per_meter": w.get("load_per_meter") if w else None,
+                    "decel_density": w.get("decel_density") if w else None,
+                    "risk_level": w.get("risk_level") if w else None,
+                    "risk_reasons": w.get("risk_reasons") if w else [],
                 },
             })
 

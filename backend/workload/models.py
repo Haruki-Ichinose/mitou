@@ -123,6 +123,12 @@ class WorkloadFeaturesDaily(models.Model):
     # 2. Condition & Risk
     monotony_load = models.FloatField(null=True, blank=True)
     val_asymmetry = models.FloatField(null=True, blank=True) 
+    load_per_meter = models.FloatField(null=True, blank=True)
+    decel_density = models.FloatField(null=True, blank=True)
+    status = models.CharField(max_length=20, default="ok")
+    status_reason = models.CharField(max_length=255, default="", blank=True)
+    risk_level = models.CharField(max_length=20, default="safety")
+    risk_reasons = models.JSONField(default=list, blank=True)
 
     # For debugging / metadata
     params = models.JSONField(default=dict, blank=True)
