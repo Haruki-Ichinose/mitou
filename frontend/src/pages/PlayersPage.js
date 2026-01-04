@@ -10,6 +10,7 @@ export default function PlayersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [athleteIdOptions, setAthleteIdOptions] = useState([]);
   const [form, setForm] = useState({
     athlete_id: "",
     athlete_name: "",
@@ -33,8 +34,32 @@ export default function PlayersPage() {
     }
   };
 
+  const loadAthleteIds = async () => {
+    try {
+      const list = await fetchAthletes({ include_unregistered: true });
+      const ids = Array.from(
+        new Set(
+          list
+            .filter(
+              (athlete) =>
+                !athlete.athlete_name ||
+                !athlete.jersey_number ||
+                !athlete.uniform_name
+            )
+            .map((athlete) => athlete.athlete_id)
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b, "en"));
+      setAthleteIdOptions(ids);
+    } catch (err) {
+      console.error(err);
+      setAthleteIdOptions([]);
+    }
+  };
+
   useEffect(() => {
     loadAthletes();
+    loadAthleteIds();
   }, []);
 
   const handleFormChange = (event) => {
@@ -68,6 +93,7 @@ export default function PlayersPage() {
       setSubmitMessage("新しい選手を登録しました。");
       resetForm();
       loadAthletes();
+      loadAthleteIds();
     } catch (err) {
       const message =
         err?.response?.data?.detail ||
@@ -159,9 +185,15 @@ export default function PlayersPage() {
                   name="athlete_id"
                   value={form.athlete_id}
                   onChange={handleFormChange}
-                  placeholder="例: 0bced2f8-0a31-4d07-b836-f7456918c0dd"
+                  placeholder="csvファイルのathlete_id列と同じ値を入力"
+                  list="athlete-id-list"
                   required
                 />
+                <datalist id="athlete-id-list">
+                  {athleteIdOptions.map((athleteId) => (
+                    <option key={athleteId} value={athleteId} />
+                  ))}
+                </datalist>
               </div>
 
               <div className="form-field">

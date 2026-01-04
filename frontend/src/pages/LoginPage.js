@@ -1,12 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import titleLogo from "../components/title.jpg";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [loginId, setLoginId] = useState("");
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    sessionStorage.setItem("loginId", loginId.trim());
     navigate("/home");
   };
 
@@ -31,6 +33,8 @@ export default function LoginPage() {
               placeholder="ユーザーIDを入力"
               autoComplete="username"
               required
+              value={loginId}
+              onChange={(event) => setLoginId(event.target.value)}
             />
           </div>
           <div className="form-field">

@@ -10,6 +10,8 @@ export default function DataRegisterPage() {
   const [history, setHistory] = useState([]);
   const [historyStatus, setHistoryStatus] = useState("idle");
   const [historyError, setHistoryError] = useState("");
+  const [loginId, setLoginId] = useState("");
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
 
   const fileLabel = useMemo(() => {
     if (!file) return "CSVファイルを選択してください";
@@ -32,7 +34,11 @@ export default function DataRegisterPage() {
     setSummary(null);
 
     try {
-      const result = await uploadWorkloadCsv(file);
+      const result = await uploadWorkloadCsv(
+        file,
+        loginId.trim(),
+        allowDuplicate
+      );
       setSummary(result);
       setStatus("success");
       loadHistory();
@@ -66,6 +72,11 @@ export default function DataRegisterPage() {
 
   useEffect(() => {
     loadHistory();
+  }, []);
+
+  useEffect(() => {
+    const storedLoginId = sessionStorage.getItem("loginId") || "";
+    setLoginId(storedLoginId);
   }, []);
 
   const formatDate = (value) => {
@@ -122,6 +133,14 @@ export default function DataRegisterPage() {
                   className="file-input__native"
                 />
               </div>
+              <label className="upload-option">
+                <input
+                  type="checkbox"
+                  checked={allowDuplicate}
+                  onChange={(event) => setAllowDuplicate(event.target.checked)}
+                />
+                同じファイルでも再計算する
+              </label>
 
               <button
                 className="primary-button"
@@ -167,6 +186,9 @@ export default function DataRegisterPage() {
                           </span>
                           <span className="upload-history__date">
                             {formatDate(item.uploaded_at)}
+                          </span>
+                          <span className="upload-history__user">
+                            ユーザーID: {item.uploaded_by || "-"}
                           </span>
                         </div>
                         <div className="upload-history__meta">

@@ -131,9 +131,13 @@ def import_statsallgroup_csv(
     filename: str | Path,
     *,
     uploaded_by: str = "",
+    source_filename: str | None = None,
     allow_duplicate: bool = False,
 ) -> WorkloadIngestionSummary:
     csv_path = _resolve_csv_path(filename)
+    display_filename = csv_path.name
+    if source_filename:
+        display_filename = Path(source_filename).name
 
     if not csv_path.exists():
         raise WorkloadIngestionError(f"CSV not found: {csv_path}")
@@ -157,7 +161,7 @@ def import_statsallgroup_csv(
             )
 
     upload = DataUpload.objects.create(
-        source_filename=csv_path.name,
+        source_filename=display_filename,
         file_hash=file_hash,
         uploaded_by=uploaded_by or "",
         parse_status="pending",

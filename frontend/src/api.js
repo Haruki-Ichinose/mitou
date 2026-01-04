@@ -4,8 +4,8 @@ const client = axios.create({
   baseURL: "http://localhost:8000/api",
 });
 
-export async function fetchAthletes() {
-  const { data } = await client.get("/workload/athletes/");
+export async function fetchAthletes(params = {}) {
+  const { data } = await client.get("/workload/athletes/", { params });
   return data;
 }
 
