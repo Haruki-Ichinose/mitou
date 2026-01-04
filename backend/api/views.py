@@ -64,12 +64,15 @@ class WorkloadIngestionView(APIView):
                         tmp_file.write(chunk)
                     temp_path = Path(tmp_file.name)
                 target_filename = str(temp_path)
+                original_filename = Path(getattr(uploaded_file, "name", "") or "").name
             else:
                 target_filename = serializer.validated_data['filename']
+                original_filename = ""
 
             summary, features = run_gps_pipeline(
                 target_filename,
                 uploaded_by=uploaded_by,
+                source_filename=original_filename or None,
                 allow_duplicate=allow_duplicate,
             )
         except WorkloadIngestionError as exc:
@@ -162,19 +165,32 @@ class WorkloadAthleteListView(APIView):
             athlete_id=OuterRef("athlete_id")
         ).order_by("-date", "-id").values("risk_level")[:1]
 
+<<<<<<< HEAD
         qs = Athlete.objects.all()
         if only_unregistered:
             qs = qs.filter(
                 Q(athlete_name="") | Q(jersey_number="") | Q(uniform_name="")
             )
         elif not include_unregistered:
+=======
+        include_unregistered = str(
+            request.query_params.get("include_unregistered", "")
+        ).lower() in {"1", "true", "yes"}
+
+        qs = Athlete.objects.all()
+        if not include_unregistered:
+>>>>>>> 7bf961eed9dca86d7e067515d00b7da74c8a421c
             qs = qs.filter(
                 athlete_name__gt="", jersey_number__gt="", uniform_name__gt=""
             )
 
         qs = qs.annotate(
             risk_level=Coalesce(Subquery(risk_level_sq), Value("safety"))
-        ).order_by("jersey_number", "athlete_name")
+        )
+        if include_unregistered:
+            qs = qs.order_by("athlete_id")
+        else:
+            qs = qs.order_by("jersey_number", "athlete_name")
         data = []
         for a in qs:
             data.append({
@@ -358,6 +374,7 @@ class WorkloadUploadHistoryView(APIView):
                     "upload_id": upload.id,
                     "filename": upload.source_filename,
                     "uploaded_at": upload.uploaded_at,
+                    "uploaded_by": upload.uploaded_by,
                     "status": upload.parse_status,
                     "rows": stat.get("rows", 0),
                     "athletes": stat.get("athletes", 0),

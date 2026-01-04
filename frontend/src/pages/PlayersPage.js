@@ -14,6 +14,7 @@ export default function PlayersPage() {
   const [candidateError, setCandidateError] = useState("");
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [athleteIdOptions, setAthleteIdOptions] = useState([]);
   const [form, setForm] = useState({
     athlete_id: "",
     athlete_name: "",
@@ -37,23 +38,8 @@ export default function PlayersPage() {
     }
   };
 
-  const loadCandidates = async () => {
-    setCandidateStatus("loading");
-    setCandidateError("");
-    try {
-      const list = await fetchAthletes({ only_unregistered: true });
-      setCandidates(list);
-      setCandidateStatus("success");
-    } catch (err) {
-      console.error(err);
-      setCandidateError("候補の取得に失敗しました");
-      setCandidateStatus("error");
-    }
-  };
-
   useEffect(() => {
     loadAthletes();
-    loadCandidates();
   }, []);
 
   const handleFormChange = (event) => {
@@ -101,7 +87,6 @@ export default function PlayersPage() {
       setSubmitMessage("新しい選手を登録しました。");
       resetForm();
       loadAthletes();
-      loadCandidates();
     } catch (err) {
       const message =
         err?.response?.data?.detail ||
@@ -218,9 +203,15 @@ export default function PlayersPage() {
                   name="athlete_id"
                   value={form.athlete_id}
                   onChange={handleFormChange}
-                  placeholder="例: 0bced2f8-0a31-4d07-b836-f7456918c0dd"
+                  placeholder="csvファイルのathlete_id列と同じ値を入力"
+                  list="athlete-id-list"
                   required
                 />
+                <datalist id="athlete-id-list">
+                  {athleteIdOptions.map((athleteId) => (
+                    <option key={athleteId} value={athleteId} />
+                  ))}
+                </datalist>
               </div>
 
               <div className="form-field">
