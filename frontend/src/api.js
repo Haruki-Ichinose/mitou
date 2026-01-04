@@ -20,6 +20,10 @@ export async function createAthleteProfile(payload) {
   return data;
 }
 
+export async function deleteAthlete(athleteId) {
+  await client.delete(`/workload/athletes/${athleteId}/`);
+}
+
 export async function fetchUploadHistory(params = {}) {
   const { data } = await client.get("/workload/uploads/", { params });
   return data;

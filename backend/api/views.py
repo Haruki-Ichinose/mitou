@@ -246,6 +246,31 @@ class WorkloadAthleteListView(APIView):
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
+class WorkloadAthleteDetailView(APIView):
+    def delete(self, request, athlete_id: str):
+        try:
+            athlete = Athlete.objects.get(athlete_id=athlete_id)
+        except Athlete.DoesNotExist:
+            return Response(
+                {"detail": "選手が見つかりません。"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        athlete.athlete_name = ""
+        athlete.jersey_number = ""
+        athlete.uniform_name = ""
+        athlete.is_active = False
+        athlete.save(
+            update_fields=[
+                "athlete_name",
+                "jersey_number",
+                "uniform_name",
+                "is_active",
+            ]
+        )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 class WorkloadAthleteTimeseriesView(APIView):
     def get(self, request, athlete_id: str):
         start = _parse_ymd(request.query_params.get("start"))

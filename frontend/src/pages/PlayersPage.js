@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { createAthleteProfile, fetchAthletes } from "../api";
+import { Link, useNavigate } from "react-router-dom";
+import { createAthleteProfile, deleteAthlete, fetchAthletes } from "../api";
 import titleLogo from "../components/title.jpg";
 import playerJersey from "../components/player.png";
 import keeperJersey from "../components/keeper.png";
 
 export default function PlayersPage() {
+  const navigate = useNavigate();
   const [athletes, setAthletes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -15,6 +16,16 @@ export default function PlayersPage() {
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [athleteIdOptions, setAthleteIdOptions] = useState([]);
+  const [activeMenuId, setActiveMenuId] = useState("");
+  const [editingAthleteId, setEditingAthleteId] = useState("");
+  const [editForm, setEditForm] = useState({
+    athlete_id: "",
+    athlete_name: "",
+    jersey_number: "",
+    uniform_name: "",
+  });
+  const [editStatus, setEditStatus] = useState("idle");
+  const [editMessage, setEditMessage] = useState("");
   const [form, setForm] = useState({
     athlete_id: "",
     athlete_name: "",
@@ -42,9 +53,31 @@ export default function PlayersPage() {
     loadAthletes();
   }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!activeMenuId) return;
+      const target = event.target;
+      if (
+        target.closest(".player-card__panel") ||
+        target.closest(".player-card__button")
+      ) {
+        return;
+      }
+      setActiveMenuId("");
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [activeMenuId]);
+
   const handleFormChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleEditChange = (event) => {
+    const { name, value } = event.target;
+    setEditForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleCandidateSelect = (event) => {
@@ -70,6 +103,19 @@ export default function PlayersPage() {
     setSelectedCandidateId("");
   };
 
+  const startEdit = (athlete) => {
+    setEditingAthleteId(athlete.athlete_id);
+    setEditForm({
+      athlete_id: athlete.athlete_id || "",
+      athlete_name: athlete.athlete_name || "",
+      jersey_number: athlete.jersey_number || "",
+      uniform_name: athlete.uniform_name || "",
+    });
+    setEditStatus("idle");
+    setEditMessage("");
+    setActiveMenuId("");
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSubmitStatus("loading");
@@ -84,8 +130,8 @@ export default function PlayersPage() {
       };
       await createAthleteProfile(payload);
       setSubmitStatus("success");
-      setSubmitMessage("新しい選手を登録しました。");
       resetForm();
+      setShowForm(false);
       loadAthletes();
     } catch (err) {
       const message =
@@ -94,6 +140,58 @@ export default function PlayersPage() {
         "登録に失敗しました。";
       setSubmitStatus("error");
       setSubmitMessage(message);
+    }
+  };
+
+  const handleEditSubmit = async (event) => {
+    event.preventDefault();
+    setEditStatus("loading");
+    setEditMessage("");
+    setActionMessage("");
+
+    try {
+      const payload = {
+        athlete_id: editForm.athlete_id.trim(),
+        athlete_name: editForm.athlete_name.trim(),
+        jersey_number: editForm.jersey_number.trim(),
+        uniform_name: editForm.uniform_name.trim(),
+      };
+      await createAthleteProfile(payload);
+      setEditStatus("success");
+      setEditMessage("選手情報を更新しました。");
+      loadAthletes();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail ||
+        err?.message ||
+        "更新に失敗しました。";
+      setEditStatus("error");
+      setEditMessage(message);
+    }
+  };
+
+  const handleDelete = async (athlete) => {
+    const confirmed = window.confirm(
+      `${athlete.athlete_name || athlete.athlete_id} を削除しますか？`
+    );
+    if (!confirmed) return;
+
+    setEditMessage("");
+
+    try {
+      await deleteAthlete(athlete.athlete_id);
+      if (editingAthleteId === athlete.athlete_id) {
+        setEditingAthleteId("");
+      }
+      loadAthletes();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail ||
+        err?.message ||
+        "削除に失敗しました。";
+      setEditMessage(message);
+    } finally {
+      setActiveMenuId("");
     }
   };
 
@@ -130,33 +228,155 @@ export default function PlayersPage() {
           {!loading && !error && athletes.length > 0 && (
             <div className="player-grid">
               {athletes.map((athlete) => (
-                <Link
+                <div
                   key={athlete.athlete_id}
                   className="player-card player-card--jersey"
-                  to={`/data/${athlete.athlete_id}`}
                 >
-                  <div className="player-card__jersey-wrap">
-                    <img
-                      className="player-card__jersey"
-                      src={athlete.position === "GK" ? keeperJersey : playerJersey}
-                      alt=""
-                    />
-                    <div className="player-card__overlay">
-                      <span className="player-card__number">
-                        {athlete.jersey_number || "-"}
-                      </span>
-                      <span
-                        className={`player-card__uniform-name ${getUniformNameSizeClass(
-                          athlete.uniform_name || athlete.athlete_name || ""
-                        )}`}
-                      >
-                        {(athlete.uniform_name || athlete.athlete_name || "-").toUpperCase()}
-                      </span>
+                  <button
+                    className="player-card__button"
+                    type="button"
+                    aria-haspopup="true"
+                    aria-expanded={activeMenuId === athlete.athlete_id}
+                    onClick={() =>
+                      setActiveMenuId((prev) =>
+                        prev === athlete.athlete_id ? "" : athlete.athlete_id
+                      )
+                    }
+                  >
+                    <div className="player-card__jersey-wrap">
+                      <img
+                        className="player-card__jersey"
+                        src={athlete.position === "GK" ? keeperJersey : playerJersey}
+                        alt=""
+                      />
+                      <div className="player-card__overlay">
+                        <span className="player-card__number">
+                          {athlete.jersey_number || "-"}
+                        </span>
+                        <span
+                          className={`player-card__uniform-name ${getUniformNameSizeClass(
+                            athlete.uniform_name || athlete.athlete_name || ""
+                          )}`}
+                        >
+                          {(athlete.uniform_name || athlete.athlete_name || "-").toUpperCase()}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </Link>
+                  </button>
+                  {activeMenuId === athlete.athlete_id && (
+                    <div className="player-card__panel" role="menu">
+                      <button
+                        className="player-card__action"
+                        type="button"
+                        onClick={() => startEdit(athlete)}
+                      >
+                        詳細を変更する
+                      </button>
+                      <button
+                        className="player-card__action"
+                        type="button"
+                        onClick={() => navigate(`/data/${athlete.athlete_id}`)}
+                      >
+                        分析結果を見る
+                      </button>
+                      <button
+                        className="player-card__action player-card__action--danger"
+                        type="button"
+                        onClick={() => handleDelete(athlete)}
+                      >
+                        この選手を削除する
+                      </button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
+          )}
+
+          {editingAthleteId && (
+            <section className="panel" style={{ marginTop: 24 }}>
+              <div className="panel-header">
+                <div>
+                  <h2>選手情報の編集</h2>
+                  <p className="panel-description">
+                    登録名・背番号・ユニフォーム表記を更新できます。
+                  </p>
+                </div>
+                <button
+                  className="ghost-button"
+                  type="button"
+                  onClick={() => setEditingAthleteId("")}
+                >
+                  閉じる
+                </button>
+              </div>
+              <form onSubmit={handleEditSubmit}>
+                <div className="form-field">
+                  <label htmlFor="edit_athlete_id">athlete_id</label>
+                  <input
+                    id="edit_athlete_id"
+                    name="athlete_id"
+                    value={editForm.athlete_id}
+                    disabled
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="edit_athlete_name">選手名</label>
+                  <input
+                    id="edit_athlete_name"
+                    name="athlete_name"
+                    value={editForm.athlete_name}
+                    onChange={handleEditChange}
+                    placeholder="例: 佐藤 太郎"
+                    required
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="edit_jersey_number">背番号</label>
+                  <input
+                    id="edit_jersey_number"
+                    name="jersey_number"
+                    value={editForm.jersey_number}
+                    onChange={handleEditChange}
+                    placeholder="例: 8"
+                    required
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="edit_uniform_name">ユニフォーム表記 (ローマ字)</label>
+                  <input
+                    id="edit_uniform_name"
+                    name="uniform_name"
+                    value={editForm.uniform_name}
+                    onChange={handleEditChange}
+                    placeholder="例: SATO"
+                    required
+                  />
+                </div>
+
+                <button
+                  style={{ marginTop: 12 }}
+                  className="primary-button"
+                  type="submit"
+                  disabled={editStatus === "loading"}
+                >
+                  {editStatus === "loading" ? "更新中..." : "更新する"}
+                </button>
+
+                {editMessage && (
+                  <p
+                    className={
+                      editStatus === "error" ? "status status--error" : "status"
+                    }
+                  >
+                    {editMessage}
+                  </p>
+                )}
+              </form>
+            </section>
           )}
 
           <div style={{ marginTop: 24 }}>
@@ -171,6 +391,7 @@ export default function PlayersPage() {
 
           {showForm && (
             <form onSubmit={handleSubmit} style={{ marginTop: 20 }}>
+              {/*}
               <div className="form-field">
                 <label htmlFor="candidate_athlete">CSV登録候補</label>
                 <select
@@ -195,7 +416,7 @@ export default function PlayersPage() {
                   <p className="form-hint">未登録の候補がありません。</p>
                 )}
               </div>
-
+              */}
               <div className="form-field">
                 <label htmlFor="athlete_id">athlete_id</label>
                 <input
