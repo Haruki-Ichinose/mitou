@@ -22,28 +22,6 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000
 - Codespaces / Preview URL が変わる環境では、該当 URL をそれぞれに追加してください。
 - `.env` は Git にコミットしません（`.env.example` を用意するのがおすすめ）。
 
-## raw データの置き場所
-- raw CSV は Git 管理しません。以下に配置してください: `data/raw/StatsAllGroup.csv`
-- 文字コードは `cp932` / `shift_jis` の可能性がありますが、import コマンド側で自動判定します。
-
-## データの取り込み・再計算手順
-1. マイグレーション適用（初回/スキーマ変更時）  
-   ```bash
-   python backend/manage.py migrate
-   ```
-2. 生データ (CSV) の取り込み  
-   ```bash
-   python manage.py import_statsallgroup_raw --csv /workspace/data/raw/StatsAllGroup.csv --user system
-   ```
-3. 日次集計の再構築（0埋め・HSR・ダイブ負荷など）  
-   ```bash
-   python backend/manage.py build_gps_daily --delete_existing
-   ```
-4. 指標とリスク算出（ACWR、Monotony など）  
-   ```bash
-   python backend/manage.py build_workload_features
-   ```
-
 ## モバイルアプリ（React Native / Expo Dev Client）
 選手本人向けのスマホアプリは `mobile/` にあります。既存 API を利用し、選手 ID/名前で絞り込んだ ACWR 推移のみを表示します。Expo Go は使わず、開発ビルド（Dev Client）で動かします。
 

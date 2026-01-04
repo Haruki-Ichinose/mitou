@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from workload.services import athlete_ids_for_upload, rebuild_workload_features
+from api.services import athlete_ids_for_upload, rebuild_workload_features
 
 class Command(BaseCommand):
     help = "Build ACWR/Monotony features with Zero-filling and GK logic (Position from DB)"

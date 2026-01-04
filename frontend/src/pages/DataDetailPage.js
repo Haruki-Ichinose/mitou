@@ -18,88 +18,143 @@ const theme = {
   gkText: "#92400E",
 };
 
+const riskPalette = {
+  safety: {
+    accent: "#16a34a",
+    bg: "rgba(34, 197, 94, 0.12)",
+    border: "rgba(34, 197, 94, 0.35)",
+    text: "#166534",
+  },
+  caution: {
+    accent: "#f59e0b",
+    bg: "rgba(251, 191, 36, 0.16)",
+    border: "rgba(251, 191, 36, 0.4)",
+    text: "#92400e",
+  },
+  risky: {
+    accent: "#ef4444",
+    bg: "rgba(248, 113, 113, 0.16)",
+    border: "rgba(248, 113, 113, 0.4)",
+    text: "#b91c1c",
+  },
+};
+
+const riskText = {
+  safety: {
+    label: "Safety",
+    jp: "安定",
+    description: "直近の負荷は安定しています。現状のリズムを維持しましょう。",
+  },
+  caution: {
+    label: "Caution",
+    jp: "注意",
+    description: "負荷が上昇傾向です。回復と強度の調整を意識してください。",
+  },
+  risky: {
+    label: "Risky",
+    jp: "危険",
+    description: "リスクが高い状態です。回復優先で負荷を調整してください。",
+  },
+};
+
 const styles = {
-  container: {
-    width: "100%",
-    maxWidth: 1320,
-    margin: "0 auto",
-    padding: "32px 40px 48px",
-    boxSizing: "border-box",
-    fontFamily: "var(--font-body)",
-    background: theme.bg,
-    borderRadius: 28,
-    border: `1px solid ${theme.border}`,
-    boxShadow: theme.shadow,
-    color: theme.textMain,
-  },
-  topNav: {
-    display: "flex",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  topNavLabel: {
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: "0.28em",
-    textTransform: "uppercase",
-    color: theme.textSub,
-  },
-  topNavActions: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
-  },
-  header: {
+  profileRow: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "flex-end",
-    marginBottom: 16,
-    borderBottom: `1px solid ${theme.border}`,
-    paddingBottom: 14,
-    gap: 20,
+    alignItems: "center",
     flexWrap: "wrap",
+    gap: 16,
+    marginBottom: 20,
   },
-  brand: { display: "flex", flexDirection: "column", gap: 4 },
-  title: {
-    margin: 0,
-    fontSize: 32,
+  profileName: {
+    fontSize: 24,
     fontWeight: 800,
-    letterSpacing: "-0.02em",
-    fontFamily: "var(--font-display)",
     color: theme.textMain,
   },
-  subtitle: { margin: 0, fontSize: 14, color: theme.textSub, fontWeight: 600 },
-  badge: (isGk) => ({
-    padding: "8px 20px",
-    borderRadius: 99,
-    fontWeight: 700,
-    fontSize: 14,
+  profileMetaRow: {
     display: "flex",
+    flexWrap: "wrap",
+    gap: 14,
+    fontSize: 13,
+    color: theme.textSub,
+    fontWeight: 600,
     alignItems: "center",
-    gap: 8,
+  },
+  profileBadge: (isGk) => ({
+    padding: "6px 14px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 12,
     background: isGk ? theme.gkBg : theme.fpBg,
     color: isGk ? theme.gkText : theme.fpText,
   }),
-  headline: {
+  conditionHero: (level) => ({
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: 24,
+    padding: 28,
+    borderRadius: 24,
+    border: `1px solid ${(riskPalette[level] || riskPalette.safety).border}`,
+    background: `linear-gradient(135deg, ${(riskPalette[level] || riskPalette.safety).bg} 0%, rgba(255,255,255,0.9) 70%)`,
+    boxShadow: theme.shadow,
+  }),
+  conditionHeroHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
-    flexWrap: "wrap",
+    marginBottom: 12,
     gap: 12,
+    flexWrap: "wrap",
   },
-  conditionBadge: (level) => ({
-    padding: "10px 16px",
-    borderRadius: 12,
-    fontSize: 16,
+  conditionTitle: {
+    fontSize: 12,
     fontWeight: 800,
-    background: level === "caution" ? "#fee2e2" : level === "risky" ? "#fef3c7" : "#dcfce7",
-    color: level === "caution" ? "#b91c1c" : level === "risky" ? "#b45309" : "#166534",
-    boxShadow: "0 8px 18px rgba(0,0,0,0.05)",
+    letterSpacing: "0.24em",
+    textTransform: "uppercase",
+    color: theme.textSub,
+  },
+  conditionDate: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: theme.textSub,
+  },
+  conditionLevel: (level) => ({
+    fontSize: 40,
+    fontWeight: 900,
+    color: (riskPalette[level] || riskPalette.safety).text,
+    letterSpacing: "-0.02em",
+    marginBottom: 8,
   }),
-  section: { marginBottom: 28, width: "100%" },
+  conditionDesc: {
+    margin: "0 0 16px",
+    fontSize: 14,
+    fontWeight: 600,
+    color: theme.textSub,
+  },
+  reasonList: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  reasonPill: (level) => ({
+    padding: "8px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    border: `1px solid ${(riskPalette[level] || riskPalette.safety).border}`,
+    background: (riskPalette[level] || riskPalette.safety).bg,
+    color: (riskPalette[level] || riskPalette.safety).text,
+  }),
+  reasonPillMuted: {
+    padding: "8px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    border: `1px dashed ${theme.border}`,
+    color: theme.textSub,
+    background: "#fff",
+  },
+  section: { width: "100%" },
   gridRow: {
     display: "grid",
     gridTemplateColumns: "0.35fr 0.65fr",
@@ -118,6 +173,83 @@ const styles = {
   metricLabel: { fontSize: 12, fontWeight: 700, color: theme.textSub, letterSpacing: "0.08em" },
   metricValue: { fontSize: 26, fontWeight: 800, color: theme.textMain },
   metricHint: { fontSize: 12, color: theme.textSub },
+  decisionGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: 12,
+  },
+  metricCard: (highlight, level) => ({
+    position: "relative",
+    background: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    border: `1px solid ${
+      highlight ? (riskPalette[level] || riskPalette.safety).accent : theme.border
+    }`,
+    boxShadow: highlight ? "0 12px 24px rgba(0,0,0,0.08)" : theme.shadow,
+  }),
+  metricTag: (level) => ({
+    position: "absolute",
+    top: 12,
+    right: 12,
+    padding: "4px 10px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    background: (riskPalette[level] || riskPalette.safety).accent,
+    color: "#fff",
+  }),
+  metricValueLarge: {
+    fontSize: 28,
+    fontWeight: 800,
+    color: theme.textMain,
+    marginBottom: 6,
+  },
+  metricNote: {
+    fontSize: 12,
+    color: theme.textSub,
+    marginTop: 6,
+  },
+  gaugeWrap: {
+    marginTop: 10,
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  },
+  gaugeTrack: {
+    position: "relative",
+    height: 10,
+    borderRadius: 999,
+    background: "#e2e8f0",
+    overflow: "hidden",
+  },
+  gaugeFill: {
+    height: "100%",
+    borderRadius: 999,
+    background: "#94a3b8",
+  },
+  gaugeIndicator: (color) => ({
+    position: "absolute",
+    top: -3,
+    width: 16,
+    height: 16,
+    borderRadius: "50%",
+    background: "#fff",
+    border: `2px solid ${color}`,
+    transform: "translateX(-50%)",
+  }),
+  gaugeMarker: (color) => ({
+    position: "absolute",
+    top: -6,
+    width: 2,
+    height: 22,
+    borderRadius: 2,
+    background: color,
+  }),
+  metricThreshold: {
+    fontSize: 12,
+    color: theme.textSub,
+  },
   chartsGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
@@ -185,15 +317,111 @@ export default function DataDetailPage() {
 
   const viewRows = useMemo(() => {
     if (!rows?.length) return [];
-    return rows.slice(-90); // 直近90日を固定表示
+    return rows.slice(-60); // 直近90日を固定表示
   }, [rows]);
 
   const latest = useMemo(() => viewRows[viewRows.length - 1], [viewRows]);
   const latestWorkload = latest?.workload || {};
   const riskLevel = latestWorkload.risk_level || "safety";
   const riskReasons = latestWorkload.risk_reasons || [];
-  const kpiAcwr = isGk ? latestWorkload.acwr_dive : latestWorkload.acwr_total_distance;
-  const kpiLoad = isGk ? latest?.total_dive_load : latest?.total_player_load;
+  const riskSummary = riskText[riskLevel] || riskText.safety;
+
+  const riskFlags = useMemo(() => {
+    const flags = {
+      hsr: false,
+      load: false,
+      monotony: false,
+      efficiency: false,
+      timeToFeet: false,
+      diveAcwr: false,
+      asymmetry: false,
+    };
+    riskReasons.forEach((reason) => {
+      if (reason.includes("HSR ACWR")) flags.hsr = true;
+      if (reason.includes("Distance ACWR")) flags.load = true;
+      if (reason.includes("High Monotony")) flags.monotony = true;
+      if (reason.includes("Low Efficiency")) flags.efficiency = true;
+      if (reason.includes("Recovery Time")) flags.timeToFeet = true;
+      if (reason.includes("Dive ACWR")) flags.diveAcwr = true;
+      if (reason.includes("High Asymmetry")) flags.asymmetry = true;
+    });
+    return flags;
+  }, [riskReasons]);
+
+  const decisionMetrics = useMemo(() => {
+    if (isGk) {
+      return [
+        {
+          key: "acwr_dive",
+          label: "Dive ACWR",
+          value: latestWorkload.acwr_dive,
+          threshold: ">= 1.5 : Risky",
+          highlight: riskFlags.diveAcwr,
+          gauge: { min: 0, max: 2.5, danger: 1.5 },
+        },
+        {
+          key: "time_to_feet",
+          label: "Time to Feet",
+          value: latestWorkload.time_to_feet,
+          unit: "s",
+          threshold: ">= 1.5 : Caution / >= 2.0 : Risky",
+          highlight: riskFlags.timeToFeet,
+          gauge: { min: 0, max: 3, warn: 1.5, danger: 2.0 },
+        },
+        {
+          key: "asymmetry",
+          label: "Asymmetry",
+          value: latestWorkload.val_asymmetry,
+          threshold: ">= 0.4 : Caution",
+          highlight: riskFlags.asymmetry,
+          gauge: { min: 0, max: 1, warn: 0.4 },
+        },
+        {
+          key: "monotony",
+          label: "Monotony",
+          value: latestWorkload.monotony_load,
+          threshold: ">= 2.5 : Caution",
+          highlight: riskFlags.monotony,
+          gauge: { min: 0, max: 4, warn: 2.5 },
+        },
+      ];
+    }
+    return [
+      {
+        key: "acwr_hsr",
+        label: "HSR ACWR",
+        value: latestWorkload.acwr_hsr,
+        threshold: ">= 1.3 : Caution / >= 1.5 : Risky",
+        highlight: riskFlags.hsr,
+        gauge: { min: 0, max: 2.5, warn: 1.3, danger: 1.5 },
+      },
+      {
+        key: "acwr_load",
+        label: "Load ACWR",
+        value: latestWorkload.acwr_load,
+        threshold: ">= 1.5 : Caution",
+        highlight: riskFlags.load,
+        gauge: { min: 0, max: 2.5, warn: 1.5 },
+      },
+      {
+        key: "monotony",
+        label: "Monotony",
+        value: latestWorkload.monotony_load,
+        threshold: ">= 2.5 : Caution",
+        highlight: riskFlags.monotony,
+        gauge: { min: 0, max: 4, warn: 2.5 },
+      },
+      {
+        key: "efficiency",
+        label: "Efficiency",
+        value: latestWorkload.efficiency_index,
+        threshold: "<= 0.5 : Caution",
+        highlight: riskFlags.efficiency,
+        gauge: { min: 0, max: 1.2, warn: 0.5 },
+        note: "低いほどリスク",
+      },
+    ];
+  }, [isGk, latestWorkload, riskFlags]);
 
   // Chart data builders
   const timelineData = useMemo(() => {
@@ -201,34 +429,9 @@ export default function DataDetailPage() {
     return {
       labels: slice.map((r) => r.date),
       loads: slice.map((r) => r.total_player_load || 0),
-      acwr: slice.map((r) => (isGk ? r.workload?.acwr_dive : r.workload?.acwr_total_distance)),
+      acwr: slice.map((r) => (isGk ? r.workload?.acwr_dive : r.workload?.acwr_load)),
     };
   }, [viewRows, isGk]);
-
-  const monotonyData = useMemo(
-    () => ({
-      labels: viewRows.map((r) => r.date),
-      values: viewRows.map((r) => r.workload?.monotony_load ?? null),
-    }),
-    [viewRows]
-  );
-
-  const asymData = useMemo(
-    () => ({
-      labels: viewRows.map((r) => r.date),
-      values: viewRows.map((r) => r.workload?.val_asymmetry ?? null),
-    }),
-    [viewRows]
-  );
-
-  const decelEffData = useMemo(
-    () => ({
-      labels: viewRows.map((r) => r.date),
-      decel: viewRows.map((r) => r.workload?.decel_density ?? null),
-      eff: viewRows.map((r) => r.workload?.load_per_meter ?? null),
-    }),
-    [viewRows]
-  );
 
   const timelineChart = {
     labels: timelineData.labels,
@@ -298,24 +501,16 @@ export default function DataDetailPage() {
     },
   };
 
-  const lineOptions = (title, max) => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { grid: { display: false } },
-      y: {
-        grid: { color: "#f3f4f6" },
-        suggestedMax: max || undefined,
-      },
-    },
-  });
-
   return (
     <div className="app-shell">
-      <div className="page data-detail-page" style={styles.container}>
-        <div style={styles.topNav}>
-          <div style={styles.topNavActions}>
+      <div className="page data-detail-page">
+        <div className="page-bar">
+          <img
+            className="title-logo title-logo--page"
+            src={titleLogo}
+            alt="Predict2Protect"
+          />
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <Link className="ghost-button" to="/data">
               一覧へ
             </Link>
@@ -325,152 +520,116 @@ export default function DataDetailPage() {
           </div>
         </div>
 
-        <header style={styles.header}>
-          <div style={styles.brand}>
-            <img
-              className="title-logo title-logo--detail"
-              src={titleLogo}
-              alt="Predict2Protect"
-            />
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>選手詳細</h2>
+            </div>
+            <span className="panel-count">更新: {latest?.date || "-"}</span>
           </div>
-          <div style={styles.badge(isGk)}>
-            <span>{isGk ? "🧤" : "🏃"}</span>
-            {isGk ? "ゴールキーパー (GK)" : "フィールドプレーヤー (FP)"}
-          </div>
-        </header>
 
-        <div style={styles.headline}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>{currentAthlete?.athlete_name || "-"}</div>
-            <div style={{ color: theme.textSub, fontWeight: 600 }}>Date: {latest?.date || "-"}</div>
-          </div>
-          <div style={styles.conditionBadge(riskLevel)}>{riskLevel}</div>
-        </div>
-
-        <div style={{ ...styles.gridRow, marginBottom: 20 }}>
-          <div style={styles.card}>
-            <SectionTitle title="Profile & KPIs" />
-            <div style={styles.kpiStack}>
-              <div>
-                <div style={styles.metricLabel}>ACWR</div>
-                <div style={styles.metricValue}>{formatNumber(kpiAcwr)}</div>
-              </div>
-              <div>
-                <div style={styles.metricLabel}>{isGk ? "Dive Load" : "Daily Load"}</div>
-                <div style={styles.metricValue}>{formatNumber(kpiLoad)}</div>
-              </div>
-              <div>
-                <div style={styles.metricLabel}>Risk Reasons</div>
-                <div style={styles.metricHint}>{riskReasons.join(", ") || "特記事項なし"}</div>
+          <div style={styles.profileRow}>
+            <div>
+              <div style={styles.profileName}>{currentAthlete?.athlete_name || "-"}</div>
+              <div style={styles.profileMetaRow}>
+                <span style={styles.profileBadge(isGk)}>{isGk ? "GK" : "FP"}</span>
+                <span>背番号: {currentAthlete?.jersey_number || "-"}</span>
+                <span>表記: {currentAthlete?.uniform_name || "-"}</span>
+                <span>ID: {currentAthlete?.athlete_id || "-"}</span>
               </div>
             </div>
           </div>
 
-          <div style={styles.card}>
+          <section style={styles.section}>
+            <div style={styles.conditionHero(riskLevel)}>
+              <div>
+                <div style={styles.conditionHeroHeader}>
+                  <span style={styles.conditionTitle}>コンディション判定</span>
+                  <span style={styles.conditionDate}>更新: {latest?.date || "-"}</span>
+                </div>
+                <div style={styles.conditionLevel(riskLevel)}>{riskSummary.label}</div>
+                <p style={styles.conditionDesc}>{riskSummary.description}</p>
+                <div style={styles.reasonList}>
+                  {riskReasons.length > 0 ? (
+                    riskReasons.map((reason, index) => (
+                      <span key={`${reason}-${index}`} style={styles.reasonPill(riskLevel)}>
+                        {reason}
+                      </span>
+                    ))
+                  ) : (
+                    <span style={styles.reasonPillMuted}>特記事項なし</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <SectionTitle title="判定に使用した値" />
+            <div style={styles.decisionGrid}>
+              {decisionMetrics.map((metric) => {
+                const gauge = buildGauge(metric);
+                const fillColor = metric.highlight
+                  ? (riskPalette[riskLevel] || riskPalette.safety).accent
+                  : "#94a3b8";
+                return (
+                  <div key={metric.key} style={styles.metricCard(metric.highlight, riskLevel)}>
+                    {metric.highlight && <span style={styles.metricTag(riskLevel)}>判定要因</span>}
+                    <div style={styles.metricLabel}>{metric.label}</div>
+                    <div style={styles.metricValueLarge}>
+                      {formatMetricValue(metric.value, metric.digits, metric.unit)}
+                    </div>
+                    <div style={styles.gaugeWrap}>
+                      <div style={styles.gaugeTrack}>
+                        <div
+                          style={{
+                            ...styles.gaugeFill,
+                            width: `${gauge.position * 100}%`,
+                            background: fillColor,
+                          }}
+                        />
+                        {gauge.value !== null && (
+                          <span
+                            style={{
+                              ...styles.gaugeIndicator(fillColor),
+                              left: `${gauge.position * 100}%`,
+                            }}
+                          />
+                        )}
+                        {gauge.warnPos !== null && (
+                          <span
+                            style={{
+                              ...styles.gaugeMarker(riskPalette.caution.accent),
+                              left: `${gauge.warnPos * 100}%`,
+                            }}
+                          />
+                        )}
+                        {gauge.dangerPos !== null && (
+                          <span
+                            style={{
+                              ...styles.gaugeMarker(riskPalette.risky.accent),
+                              left: `${gauge.dangerPos * 100}%`,
+                            }}
+                          />
+                        )}
+                      </div>
+                      <div style={styles.metricThreshold}>{metric.threshold}</div>
+                      {metric.note && <div style={styles.metricNote}>{metric.note}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section style={styles.section}>
             <SectionTitle title="負荷とACWR 推移 (45日)" />
-            <div style={{ height: 320 }}>
-              <Chart type="bar" data={timelineChart} options={timelineOptions} />
-            </div>
-          </div>
-        </div>
-
-        <section style={styles.section}>
-          <SectionTitle title="コンディション指標の推移" />
-          <div style={styles.chartsGrid}>
             <div style={styles.card}>
-              <h4 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 800 }}>モノトニー (7日)</h4>
-              <div style={{ height: 220 }}>
-                <Chart
-                  type="line"
-                  data={{
-                    labels: monotonyData.labels,
-                    datasets: [
-                      {
-                        label: "Monotony",
-                        data: monotonyData.values,
-                        borderColor: "#0ea5e9",
-                        backgroundColor: "rgba(14,165,233,0.12)",
-                        tension: 0.3,
-                        pointRadius: 0,
-                      },
-                    ],
-                  }}
-                  options={lineOptions("Monotony", 3)}
-                />
+              <div style={{ height: 320 }}>
+                <Chart type="bar" data={timelineChart} options={timelineOptions} />
               </div>
             </div>
-
-            <div style={styles.card}>
-              <h4 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 800 }}>
-                {isGk ? "ダイブ左右非対称" : "動作左右非対称"}
-              </h4>
-              <div style={{ height: 220 }}>
-                <Chart
-                  type="line"
-                  data={{
-                    labels: asymData.labels,
-                    datasets: [
-                      {
-                        label: "Asymmetry",
-                        data: asymData.values,
-                        borderColor: "#f97316",
-                        backgroundColor: "rgba(249,115,22,0.12)",
-                        tension: 0.3,
-                        pointRadius: 0,
-                      },
-                    ],
-                  }}
-                  options={lineOptions("Asymmetry", 1)}
-                />
-              </div>
-            </div>
-
-            <div style={styles.card}>
-              <h4 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 800 }}>減速密度</h4>
-              <div style={{ height: 220 }}>
-                <Chart
-                  type="line"
-                  data={{
-                    labels: decelEffData.labels,
-                    datasets: [
-                      {
-                        label: "Decel Density",
-                        data: decelEffData.decel,
-                        borderColor: "#6366f1",
-                        backgroundColor: "rgba(99,102,241,0.12)",
-                        tension: 0.3,
-                        pointRadius: 0,
-                      },
-                    ],
-                  }}
-                  options={lineOptions("Decel", undefined)}
-                />
-              </div>
-            </div>
-
-            <div style={styles.card}>
-              <h4 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 800 }}>機械的効率 (load/m)</h4>
-              <div style={{ height: 220 }}>
-                <Chart
-                  type="line"
-                  data={{
-                    labels: decelEffData.labels,
-                    datasets: [
-                      {
-                        label: "Mechanical Efficiency",
-                        data: decelEffData.eff,
-                        borderColor: "#22c55e",
-                        backgroundColor: "rgba(34,197,94,0.12)",
-                        tension: 0.3,
-                        pointRadius: 0,
-                      },
-                    ],
-                  }}
-                  options={lineOptions("Efficiency", undefined)}
-                />
-              </div>
-            </div>
-          </div>
+          </section>
         </section>
       </div>
     </div>
@@ -494,7 +653,41 @@ const SectionTitle = ({ title }) => (
   </h2>
 );
 
-const formatNumber = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(3) : "-");
+const formatNumber = (v, digits = 2) =>
+  typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "-";
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const toNumber = (value) =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const formatMetricValue = (value, digits = 2, unit = "") => {
+  const base = formatNumber(value, digits);
+  if (base === "-") return "-";
+  return unit ? `${base} ${unit}` : base;
+};
+
+const buildGauge = (metric) => {
+  const gauge = metric.gauge || {};
+  const min = gauge.min ?? 0;
+  const max = gauge.max ?? 1;
+  const value = toNumber(metric.value);
+  const range = max - min || 1;
+  const safeValue = value === null ? min : clamp(value, min, max);
+  const position = clamp((safeValue - min) / range, 0, 1);
+  const toPos = (raw) => {
+    if (raw === null || raw === undefined) return null;
+    return clamp((raw - min) / range, 0, 1);
+  };
+  return {
+    min,
+    max,
+    value,
+    position,
+    warnPos: toPos(gauge.warn),
+    dangerPos: toPos(gauge.danger),
+  };
+};
 
 const diveCount = (row) => {
   const m = row.metrics || {};

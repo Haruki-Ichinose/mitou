@@ -7,6 +7,7 @@ export default function DataRegisterPage() {
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState("idle");
   const [summary, setSummary] = useState(null);
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyStatus, setHistoryStatus] = useState("idle");
   const [historyError, setHistoryError] = useState("");
@@ -32,7 +33,7 @@ export default function DataRegisterPage() {
     setSummary(null);
 
     try {
-      const result = await uploadWorkloadCsv(file);
+      const result = await uploadWorkloadCsv(file, "", allowDuplicate);
       setSummary(result);
       setStatus("success");
       loadHistory();
@@ -121,6 +122,20 @@ export default function DataRegisterPage() {
                   }}
                   className="file-input__native"
                 />
+              </div>
+
+              <div className="form-field">
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={allowDuplicate}
+                    onChange={(event) => setAllowDuplicate(event.target.checked)}
+                  />
+                  <span>同一ファイルでも再計算する</span>
+                </label>
+                <p className="form-hint">
+                  既存のCSVを再アップロードして計算をやり直します。
+                </p>
               </div>
 
               <button

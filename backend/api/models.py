@@ -31,12 +31,11 @@ class Athlete(models.Model):
     jersey_number = models.CharField(max_length=12, blank=True, default="")
     uniform_name = models.CharField(max_length=255, blank=True, default="")
     is_active = models.BooleanField(default=True)
-    
-    # ★追加: ポジション情報 (GK判定のSingle Source of Truth)
+
     position = models.CharField(
-        max_length=10, 
-        default="FP", 
-        choices=[("GK", "GK"), ("FP", "FP")]
+        max_length=10,
+        default="FP",
+        choices=[("GK", "GK"), ("FP", "FP")],
     )
 
     class Meta:
@@ -75,27 +74,33 @@ class GpsDaily(models.Model):
 
     is_match_day = models.BooleanField(default=False)
     md_offset = models.IntegerField(null=True, blank=True)
-    md_phase = models.CharField(max_length=20, blank=True, default="")
 
-    # === Main Metrics (FP & GK) ===
-    total_distance = models.FloatField(null=True, blank=True, default=0)
-    total_player_load = models.FloatField(null=True, blank=True, default=0)
+    # --- 1. 基本ボリューム (全員必須) ---
+    # 練習時間を入れないと「1分あたりの強度」が出せないので必須です
+    total_duration = models.FloatField(default=0)  # [追加] (秒 or 分)
+    total_distance = models.FloatField(default=0)
+    total_player_load = models.FloatField(default=0)
     
-    # FP Specific
-    hsr_distance = models.FloatField(null=True, blank=True, default=0)
-    ima_total = models.FloatField(null=True, blank=True, default=0)
-    ima_asymmetry = models.FloatField(null=True, blank=True)
+    # --- 2. 強度・コンディション基礎 (全員必須) ---
+    # 90%max速度のチェックや、心拍効率計算の元データとして必須
+    max_vel = models.FloatField(default=0)         # [追加]
+    mean_heart_rate = models.FloatField(null=True, blank=True) # [追加]
 
-    # GK Specific
-    total_dive_load = models.FloatField(null=True, blank=True, default=0)
-    total_jumps = models.FloatField(null=True, blank=True, default=0)
-    dive_asymmetry = models.FloatField(null=True, blank=True)
+    # --- 3. FP（フィールドプレーヤー）重要指標 ---
+    # ハムストリング(HSR)と膝(減速)のリスク管理用
+    hsr_distance = models.FloatField(default=0)    # Band5+6
+    high_decel_count = models.IntegerField(default=0) # [追加] 膝への負荷回数
 
-    # Other raw metrics
+    # --- 4. GK（ゴールキーパー）重要指標 ---
+    # 「量(回数)」と「キレ(時間)」の管理用
+    total_dive_count = models.IntegerField(default=0) # [追加] Loadより回数の方が直感的
+    avg_time_to_feet = models.FloatField(null=True, blank=True) # [追加] コンディション判定の肝
+    total_jumps = models.FloatField(default=0)
+
+    # --- その他 (JSONへ) ---
+    # ima_total, dive_load, asymmetries など、
+    # 頻繁にフィルタリングしないものは metrics JSON に逃がしてもOK
     metrics = models.JSONField(default=dict, blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "gps_daily"
@@ -118,25 +123,36 @@ class WorkloadFeaturesDaily(models.Model):
     athlete = models.ForeignKey(Athlete, on_delete=models.PROTECT, related_name="workload_features")
     date = models.DateField(db_column="date_")
 
-    # === Analysis Results ===
     # 1. ACWR (Acute:Chronic Workload Ratio)
-    acwr_total_distance = models.FloatField(null=True, blank=True)
-    acwr_hsr = models.FloatField(null=True, blank=True)  # for FP
-    acwr_dive = models.FloatField(null=True, blank=True) # for GK
-    acwr_jump = models.FloatField(null=True, blank=True) # for GK
+    acwr_load = models.FloatField(null=True, blank=True) # Loadベースに変更推奨
+    acwr_hsr = models.FloatField(null=True, blank=True)
+    acwr_dive = models.FloatField(null=True, blank=True)
 
-    # 2. Condition & Risk
-    monotony_load = models.FloatField(null=True, blank=True)
-    val_asymmetry = models.FloatField(null=True, blank=True) 
-    load_per_meter = models.FloatField(null=True, blank=True)
-    decel_density = models.FloatField(null=True, blank=True)
-    status = models.CharField(max_length=20, default="ok")
-    status_reason = models.CharField(max_length=255, default="", blank=True)
-    risk_level = models.CharField(max_length=20, default="safety")
+    # 2. Quality & Condition
+    efficiency_index = models.FloatField(null=True, blank=True) # [New] 心拍効率
+    load_per_meter = models.FloatField(null=True, blank=True)   # 練習の質
+    monotony_load = models.FloatField(null=True, blank=True)    # 単調性
+
+    # --- 3. Risk Status (修正箇所) ---
+    RISK_LEVEL_CHOICES = [
+        ('safety', 'Safety (Green)'),   # 安全
+        ('caution', 'Caution (Yellow)'), # 要注意
+        ('risky', 'Risky (Red)'),       # 危険・要リカバリー
+    ]
+
+    risk_level = models.CharField(
+        max_length=20,
+        choices=RISK_LEVEL_CHOICES,
+        default='safety',
+        db_index=True,  # ダッシュボードで「Riskyな選手」を即座に抽出するために必須
+    )
+
+    # 具体的なリスク要因のリスト (例: ["HSR ACWR > 1.5", "Efficiency Low"])
     risk_reasons = models.JSONField(default=list, blank=True)
-
-    # For debugging / metadata
+    
+    # 細かいリスク要因やパラメータはJSONへ
     params = models.JSONField(default=dict, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

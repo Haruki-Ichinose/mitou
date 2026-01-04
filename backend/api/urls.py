@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    GpsUploadView,
     WorkloadIngestionView,
     WorkloadAthleteListView,
     WorkloadAthleteTimeseriesView,
@@ -14,4 +15,5 @@ urlpatterns = [
     path('workload/ingest/', WorkloadIngestionView.as_view(), name='workload-ingest'),
     path('workload/uploads/', WorkloadUploadHistoryView.as_view(), name='workload-uploads'),
     path('ingest/', WorkloadIngestionView.as_view(), name='ingest'),
+    path('upload/gps/', GpsUploadView.as_view(), name='upload-gps'),
 ]

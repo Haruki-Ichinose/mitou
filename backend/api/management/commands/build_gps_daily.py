@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from workload.services import athlete_ids_for_upload, rebuild_gps_daily
+from api.services import athlete_ids_for_upload, rebuild_gps_daily
 
 class Command(BaseCommand):
     help = "Build gps_daily with new sports science metrics"
