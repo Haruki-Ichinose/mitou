@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from workload.services import detect_positions
+from api.services import detect_positions
 
 class Command(BaseCommand):
     help = "過去のGPSデータに基づいて選手のポジション(GK/FP)を自動判定・更新します"

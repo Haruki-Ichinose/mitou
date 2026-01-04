@@ -2,8 +2,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from django.conf import settings
+from django.db import transaction
 from django.utils.dateparse import parse_date
-from django.db.models import Count, OuterRef, Subquery, Value
+from django.db.models import Count, OuterRef, Subquery, Value, Q
 from django.db.models.functions import Coalesce
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -11,15 +12,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .serializers import WorkloadIngestionRequestSerializer
-from workload.services import (
+from .services import (
     WorkloadIngestionError,
-    detect_positions,
-    import_statsallgroup_csv,
-    rebuild_gps_daily,
-    rebuild_workload_features,
+    run_gps_pipeline,
 )
 
-from workload.models import (
+from .models import (
     Athlete,
     DataUpload,
     GpsDaily,
@@ -32,6 +30,12 @@ def _parse_ymd(s: str | None):
         return None
     d = parse_date(s)
     return d
+
+
+def _is_truthy(value) -> bool:
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class WorkloadIngestionView(APIView):
@@ -63,36 +67,112 @@ class WorkloadIngestionView(APIView):
             else:
                 target_filename = serializer.validated_data['filename']
 
-            summary = import_statsallgroup_csv(
+            summary, features = run_gps_pipeline(
                 target_filename,
                 uploaded_by=uploaded_by,
                 allow_duplicate=allow_duplicate,
             )
-            if summary.rows_imported > 0 and summary.athletes:
-                rebuild_gps_daily(athlete_ids=summary.athletes)
-                detect_positions(athlete_ids=summary.athletes)
-                rebuild_workload_features(athlete_ids=summary.athletes)
         except WorkloadIngestionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink(missing_ok=True)
 
-        return Response(summary.as_dict(), status=status.HTTP_200_OK)
+        payload = summary.as_dict()
+        payload["updated_features"] = features
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class GpsUploadView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request):
+        uploaded_file = request.FILES.get("file")
+        if not uploaded_file:
+            return Response(
+                {"status": "error", "message": "file is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        uploaded_by = request.data.get("user") or request.data.get("uploaded_by") or ""
+        allow_duplicate = _is_truthy(request.data.get("allow_duplicate"))
+        temp_path: Path | None = None
+
+        try:
+            upload_root = Path(getattr(settings, "MEDIA_ROOT", settings.BASE_DIR / "media"))
+            upload_dir = upload_root / "uploads"
+            upload_dir.mkdir(parents=True, exist_ok=True)
+
+            suffix = Path(getattr(uploaded_file, "name", "") or "").suffix or ".csv"
+            with NamedTemporaryFile(suffix=suffix, delete=False, dir=upload_dir) as tmp_file:
+                for chunk in uploaded_file.chunks():
+                    tmp_file.write(chunk)
+                temp_path = Path(tmp_file.name)
+
+            with transaction.atomic():
+                summary, features = run_gps_pipeline(
+                    temp_path,
+                    uploaded_by=uploaded_by,
+                    allow_duplicate=allow_duplicate,
+                )
+
+            if summary.skipped:
+                return Response(
+                    {
+                        "status": "skipped",
+                        "message": f"Duplicate file (upload id={summary.duplicate_of}).",
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            return Response(
+                {
+                    "status": "success",
+                    "imported_rows": summary.rows_imported,
+                    "updated_features": features,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+        except WorkloadIngestionError as exc:
+            return Response(
+                {"status": "error", "message": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return Response(
+                {"status": "error", "message": str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        finally:
+            if temp_path and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
 
 
 # === 以下、Workload関連ビュー（修正版） ===
 
 class WorkloadAthleteListView(APIView):
     def get(self, request):
+        include_unregistered = _is_truthy(request.query_params.get("include_unregistered"))
+        only_unregistered = _is_truthy(request.query_params.get("only_unregistered"))
+
         # 登録済み（名前と背番号がある）選手のみ表示
         risk_level_sq = WorkloadFeaturesDaily.objects.filter(
             athlete_id=OuterRef("athlete_id")
         ).order_by("-date", "-id").values("risk_level")[:1]
 
-        qs = Athlete.objects.filter(
-            athlete_name__gt="", jersey_number__gt="", uniform_name__gt=""
-        ).annotate(
+        qs = Athlete.objects.all()
+        if only_unregistered:
+            qs = qs.filter(
+                Q(athlete_name="") | Q(jersey_number="") | Q(uniform_name="")
+            )
+        elif not include_unregistered:
+            qs = qs.filter(
+                athlete_name__gt="", jersey_number__gt="", uniform_name__gt=""
+            )
+
+        qs = qs.annotate(
             risk_level=Coalesce(Subquery(risk_level_sq), Value("safety"))
         ).order_by("jersey_number", "athlete_name")
         data = []
@@ -173,21 +253,32 @@ class WorkloadAthleteTimeseriesView(APIView):
 
         rows = []
         for d in gqs.iterator(chunk_size=2000):
+            metrics = d.metrics or {}
+            total_dive_load = metrics.get("total_dive_load")
+            if total_dive_load is None:
+                total_dive_load = (
+                    (metrics.get("total_dive_load_left") or 0)
+                    + (metrics.get("total_dive_load_right") or 0)
+                    + (metrics.get("total_dive_load_centre") or 0)
+                )
             rows.append({
                 "date": d.date,
                 "is_match_day": d.is_match_day,
                 "md_offset": d.md_offset,
-                "md_phase": d.md_phase,
                 
+                "total_duration": d.total_duration,
                 "total_distance": d.total_distance,
                 "total_player_load": d.total_player_load,
+                "max_vel": d.max_vel,
+                "mean_heart_rate": d.mean_heart_rate,
                 "hsr_distance": d.hsr_distance,
-                "ima_asymmetry": d.ima_asymmetry,
-                "total_dive_load": d.total_dive_load,
+                "high_decel_count": d.high_decel_count,
+                "total_dive_count": d.total_dive_count,
+                "avg_time_to_feet": d.avg_time_to_feet,
+                "total_dive_load": total_dive_load,
                 "total_jumps": d.total_jumps,
-                "dive_asymmetry": d.dive_asymmetry,
                 
-                "metrics": d.metrics or {},
+                "metrics": metrics,
             })
 
         # 2. WorkloadFeaturesDaily (ACWRなどの分析値)
@@ -199,10 +290,16 @@ class WorkloadAthleteTimeseriesView(APIView):
             wqs = wqs.filter(date__lte=end)
             
         w_cols = [
-            "date", 
-            "acwr_total_distance", "acwr_hsr", "acwr_dive", "acwr_jump",
-            "monotony_load", "val_asymmetry", "load_per_meter", "decel_density",
-            "risk_level", "risk_reasons"
+            "date",
+            "acwr_load",
+            "acwr_hsr",
+            "acwr_dive",
+            "efficiency_index",
+            "monotony_load",
+            "load_per_meter",
+            "risk_level",
+            "risk_reasons",
+            "params",
         ]
         for w in wqs.values(*w_cols):
             wmap[w["date"]] = w
@@ -216,14 +313,16 @@ class WorkloadAthleteTimeseriesView(APIView):
             out.append({
                 **r,
                 "workload": {
-                    "acwr_total_distance": w.get("acwr_total_distance") if w else None,
+                    "acwr_load": w.get("acwr_load") if w else None,
+                    "acwr_total_distance": w.get("acwr_load") if w else None,
                     "acwr_hsr": w.get("acwr_hsr") if w else None,
                     "acwr_dive": w.get("acwr_dive") if w else None,
-                    "acwr_jump": w.get("acwr_jump") if w else None,
+                    "efficiency_index": w.get("efficiency_index") if w else None,
                     "monotony_load": w.get("monotony_load") if w else None,
-                    "val_asymmetry": w.get("val_asymmetry") if w else None,
                     "load_per_meter": w.get("load_per_meter") if w else None,
-                    "decel_density": w.get("decel_density") if w else None,
+                    "val_asymmetry": (w.get("params") or {}).get("val_asymmetry") if w else None,
+                    "decel_density": (w.get("params") or {}).get("decel_density") if w else None,
+                    "time_to_feet": (w.get("params") or {}).get("time_to_feet") if w else None,
                     "risk_level": w.get("risk_level") if w else None,
                     "risk_reasons": w.get("risk_reasons") if w else [],
                 },

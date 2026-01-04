@@ -9,6 +9,10 @@ export default function PlayersPage() {
   const [athletes, setAthletes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [candidates, setCandidates] = useState([]);
+  const [candidateStatus, setCandidateStatus] = useState("idle");
+  const [candidateError, setCandidateError] = useState("");
+  const [selectedCandidateId, setSelectedCandidateId] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     athlete_id: "",
@@ -33,13 +37,41 @@ export default function PlayersPage() {
     }
   };
 
+  const loadCandidates = async () => {
+    setCandidateStatus("loading");
+    setCandidateError("");
+    try {
+      const list = await fetchAthletes({ only_unregistered: true });
+      setCandidates(list);
+      setCandidateStatus("success");
+    } catch (err) {
+      console.error(err);
+      setCandidateError("候補の取得に失敗しました");
+      setCandidateStatus("error");
+    }
+  };
+
   useEffect(() => {
     loadAthletes();
+    loadCandidates();
   }, []);
 
   const handleFormChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleCandidateSelect = (event) => {
+    const nextId = event.target.value;
+    setSelectedCandidateId(nextId);
+    if (!nextId) return;
+    const candidate = candidates.find((item) => item.athlete_id === nextId);
+    if (!candidate) return;
+    setForm((prev) => ({
+      ...prev,
+      athlete_id: candidate.athlete_id || "",
+      athlete_name: candidate.athlete_name || "",
+    }));
   };
 
   const resetForm = () => {
@@ -49,6 +81,7 @@ export default function PlayersPage() {
       jersey_number: "",
       uniform_name: "",
     });
+    setSelectedCandidateId("");
   };
 
   const handleSubmit = async (event) => {
@@ -68,6 +101,7 @@ export default function PlayersPage() {
       setSubmitMessage("新しい選手を登録しました。");
       resetForm();
       loadAthletes();
+      loadCandidates();
     } catch (err) {
       const message =
         err?.response?.data?.detail ||
@@ -152,6 +186,31 @@ export default function PlayersPage() {
 
           {showForm && (
             <form onSubmit={handleSubmit} style={{ marginTop: 20 }}>
+              <div className="form-field">
+                <label htmlFor="candidate_athlete">CSV登録候補</label>
+                <select
+                  id="candidate_athlete"
+                  value={selectedCandidateId}
+                  onChange={handleCandidateSelect}
+                >
+                  <option value="">候補から選択 (任意)</option>
+                  {candidates.map((item) => (
+                    <option key={item.athlete_id} value={item.athlete_id}>
+                      {formatCandidateLabel(item)}
+                    </option>
+                  ))}
+                </select>
+                {candidateStatus === "loading" && (
+                  <p className="form-hint">候補を読み込み中...</p>
+                )}
+                {candidateStatus === "error" && (
+                  <p className="status status--error">{candidateError}</p>
+                )}
+                {candidateStatus === "success" && candidates.length === 0 && (
+                  <p className="form-hint">未登録の候補がありません。</p>
+                )}
+              </div>
+
               <div className="form-field">
                 <label htmlFor="athlete_id">athlete_id</label>
                 <input
@@ -250,4 +309,10 @@ function compareAthletes(a, b) {
     String(b.jersey_number || ""),
     "ja"
   );
+}
+
+function formatCandidateLabel(candidate) {
+  const name = candidate.athlete_name || "名前未登録";
+  const position = candidate.position === "GK" ? "GK" : "FP";
+  return `${name} (${position}) / ${candidate.athlete_id}`;
 }

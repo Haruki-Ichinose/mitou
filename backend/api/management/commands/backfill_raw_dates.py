@@ -3,7 +3,7 @@ from datetime import datetime
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from workload.models import GpsSessionRaw
+from api.models import GpsSessionRaw
 
 
 def parse_date_any(x):

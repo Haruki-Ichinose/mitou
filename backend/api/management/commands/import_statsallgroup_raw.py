@@ -2,7 +2,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
-from workload.services import WorkloadIngestionError, import_statsallgroup_csv
+from api.services import WorkloadIngestionError, import_statsallgroup_csv
 
 
 
