@@ -250,9 +250,50 @@ const styles = {
     fontSize: 12,
     color: theme.textSub,
   },
+  rangeTable: {
+    marginTop: 12,
+    display: "grid",
+    gap: 8,
+  },
+  rangeRow: {
+    display: "grid",
+    gridTemplateColumns: "52px 1fr auto",
+    gap: 10,
+    alignItems: "center",
+  },
+  rangeLabel: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: theme.textSub,
+  },
+  rangeValue: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: theme.textMain,
+  },
+  rangeBadge: {
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "2px 8px",
+    borderRadius: 999,
+    border: `1px solid ${theme.border}`,
+    color: theme.textSub,
+    background: "#f8fafc",
+  },
+  metricMeta: {
+    marginTop: 6,
+    fontSize: 12,
+    color: theme.textSub,
+  },
+  chartTitle: {
+    fontSize: 13,
+    fontWeight: 800,
+    color: theme.textSub,
+    letterSpacing: "0.06em",
+    marginBottom: 10,
+  },
   chartsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
     gap: 16,
   },
 };
@@ -317,7 +358,15 @@ export default function DataDetailPage() {
 
   const viewRows = useMemo(() => {
     if (!rows?.length) return [];
-    return rows.slice(-60); // 直近90日を固定表示
+    const lastDateRaw = rows[rows.length - 1]?.date;
+    const lastDate = lastDateRaw ? new Date(lastDateRaw) : null;
+    if (!lastDate || Number.isNaN(lastDate.valueOf())) return rows.slice(-30);
+    const start = new Date(lastDate);
+    start.setDate(start.getDate() - 30);
+    return rows.filter((row) => {
+      const rowDate = new Date(row.date);
+      return rowDate >= start && rowDate <= lastDate;
+    });
   }, [rows]);
 
   const latest = useMemo(() => viewRows[viewRows.length - 1], [viewRows]);
@@ -423,82 +472,215 @@ export default function DataDetailPage() {
     ];
   }, [isGk, latestWorkload, riskFlags]);
 
-  // Chart data builders
-  const timelineData = useMemo(() => {
-    const slice = viewRows.slice(-45);
-    return {
-      labels: slice.map((r) => r.date),
-      loads: slice.map((r) => r.total_player_load || 0),
-      acwr: slice.map((r) => (isGk ? r.workload?.acwr_dive : r.workload?.acwr_load)),
-    };
-  }, [viewRows, isGk]);
+  const trendMetrics = useMemo(() => {
+    if (isGk) {
+      return [
+        {
+          key: "acwr_dive",
+          label: "Dive ACWR",
+          dataKey: "acwr_dive",
+          color: "#ef4444",
+          fill: "rgba(239, 68, 68, 0.18)",
+          thresholds: [{ value: 1.5, label: "Risky 1.5", color: riskPalette.risky.accent }],
+          suggestedMax: 2.5,
+        },
+        {
+          key: "monotony",
+          label: "Monotony",
+          dataKey: "monotony_load",
+          color: "#0ea5e9",
+          fill: "rgba(14, 165, 233, 0.18)",
+          thresholds: [{ value: 2.5, label: "Caution 2.5", color: riskPalette.caution.accent }],
+          suggestedMax: 4,
+        },
+      ];
+    }
 
-  const timelineChart = {
-    labels: timelineData.labels,
-    datasets: [
+    return [
       {
-        type: "bar",
-        label: "Daily Load",
-        data: timelineData.loads,
-        backgroundColor: "rgba(59,130,246,0.25)",
-        borderRadius: 6,
-        yAxisID: "load",
+        key: "acwr_hsr",
+        label: "HSR ACWR",
+        dataKey: "acwr_hsr",
+        color: "#ef4444",
+        fill: "rgba(239, 68, 68, 0.18)",
+        thresholds: [
+          { value: 1.3, label: "Caution 1.3", color: riskPalette.caution.accent },
+          { value: 1.5, label: "Risky 1.5", color: riskPalette.risky.accent },
+        ],
+        suggestedMax: 2.5,
       },
       {
-        type: "line",
-        label: "ACWR",
-        data: timelineData.acwr,
-        borderColor: "#ef4444",
-        backgroundColor: "rgba(239,68,68,0.2)",
-        yAxisID: "acwr",
-        tension: 0.3,
-        pointRadius: 2,
-        pointHoverRadius: 4,
+        key: "acwr_load",
+        label: "Load ACWR",
+        dataKey: "acwr_load",
+        color: "#f59e0b",
+        fill: "rgba(245, 158, 11, 0.18)",
+        thresholds: [{ value: 1.5, label: "Caution 1.5", color: riskPalette.caution.accent }],
+        suggestedMax: 2.5,
       },
-    ],
+      {
+        key: "monotony",
+        label: "Monotony",
+        dataKey: "monotony_load",
+        color: "#0ea5e9",
+        fill: "rgba(14, 165, 233, 0.18)",
+        thresholds: [{ value: 2.5, label: "Caution 2.5", color: riskPalette.caution.accent }],
+        suggestedMax: 4,
+      },
+    ];
+  }, [isGk]);
+
+  const summaryMetrics = useMemo(() => {
+    if (isGk) {
+      return [
+        {
+          key: "time_to_feet",
+          label: "Time to Feet",
+          dataKey: "time_to_feet",
+          unit: "s",
+          digits: 2,
+          isValid: (_row, value) => value > 0,
+        },
+        {
+          key: "asymmetry",
+          label: "Asymmetry",
+          dataKey: "val_asymmetry",
+          digits: 2,
+          isValid: (row, _value) => (row.total_dive_count || 0) > 0,
+        },
+      ];
+    }
+
+    return [
+      {
+        key: "efficiency",
+        label: "Efficiency",
+        dataKey: "efficiency_index",
+        digits: 2,
+        isValid: (row, _value) => (row.mean_heart_rate || 0) > 0,
+      },
+    ];
+  }, [isGk]);
+
+  const summaryStats = useMemo(() => {
+    const parseRowDate = (row) => {
+      const parsed = row?.date ? new Date(row.date) : null;
+      return parsed && !Number.isNaN(parsed.valueOf()) ? parsed : null;
+    };
+
+    const isMetricValueValid = (row, metric) => {
+      const value = toNumber(row.workload?.[metric.dataKey]);
+      if (value === null) return false;
+      if (metric.isValid && !metric.isValid(row, value)) return false;
+      return true;
+    };
+
+    const findLatestRow = (metric) => {
+      for (let i = rows.length - 1; i >= 0; i -= 1) {
+        const row = rows[i];
+        if (isMetricValueValid(row, metric)) return row;
+      }
+      return null;
+    };
+
+    const filterRowsByDays = (metric, anchorDate, days) => {
+      const start = new Date(anchorDate);
+      start.setDate(start.getDate() - (days - 1));
+      return rows.filter((row) => {
+        const rowDate = parseRowDate(row);
+        if (!rowDate) return false;
+        if (rowDate < start || rowDate > anchorDate) return false;
+        return isMetricValueValid(row, metric);
+      });
+    };
+
+    const buildRangeStats = (rangeRows, metric) => {
+      const values = rangeRows.map((row) => toNumber(row.workload?.[metric.dataKey]));
+      if (!values.length) return { min: null, max: null, count: 0 };
+      return {
+        min: Math.min(...values),
+        max: Math.max(...values),
+        count: values.length,
+      };
+    };
+
+    return summaryMetrics.map((metric) => {
+      const latestRow = findLatestRow(metric);
+      const anchorDate = latestRow ? parseRowDate(latestRow) : null;
+      const rows7 = anchorDate ? filterRowsByDays(metric, anchorDate, 7) : [];
+      const rows28 = anchorDate ? filterRowsByDays(metric, anchorDate, 28) : [];
+      return {
+        metric,
+        latestRow,
+        range7: buildRangeStats(rows7, metric),
+        range28: buildRangeStats(rows28, metric),
+      };
+    });
+  }, [rows, summaryMetrics]);
+
+  const formatRange = (range, digits, unit = "") => {
+    if (!range || range.count === 0) return "データなし";
+    const min = range.min.toFixed(digits);
+    const max = range.max.toFixed(digits);
+    return unit ? `${min} - ${max} ${unit}` : `${min} - ${max}`;
   };
 
-  const timelineOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { position: "top" },
-      annotation: {
-        annotations: {
-          risk: {
+  const buildMetricTrendChart = (metric) => {
+    const labels = viewRows.map((row) => row.date);
+    const values = viewRows.map((row) => row.workload?.[metric.dataKey] ?? null);
+    const annotations = {};
+    (metric.thresholds || []).forEach((threshold, index) => {
+      annotations[`${metric.key}-threshold-${index}`] = {
+        type: "line",
+        yMin: threshold.value,
+        yMax: threshold.value,
+        borderColor: threshold.color,
+        borderDash: [6, 4],
+        borderWidth: 1,
+        label: {
+          display: true,
+          content: threshold.label,
+          position: "end",
+          backgroundColor: "rgba(255,255,255,0.85)",
+          color: threshold.color,
+        },
+      };
+    });
+
+    return {
+      data: {
+        labels,
+        datasets: [
+          {
             type: "line",
-            yMin: 1.5,
-            yMax: 1.5,
-            borderColor: "#ef4444",
-            borderWidth: 1,
-            borderDash: [6, 4],
-            yScaleID: "acwr",
-            label: {
-              display: true,
-              content: "ACWR=1.5",
-              position: "end",
-              backgroundColor: "rgba(239,68,68,0.08)",
-              color: "#b91c1c",
-            },
+            label: metric.label,
+            data: values,
+            borderColor: metric.color,
+            backgroundColor: metric.fill,
+            tension: 0.3,
+            pointRadius: 2,
+            pointHoverRadius: 4,
+            fill: true,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          annotation: { annotations },
+        },
+        scales: {
+          x: { display: false },
+          y: {
+            grid: { color: "#f3f4f6" },
+            suggestedMin: 0,
+            suggestedMax: metric.suggestedMax,
           },
         },
       },
-    },
-    scales: {
-      x: { grid: { display: false } },
-      load: {
-        position: "left",
-        grid: { color: "#f3f4f6" },
-        title: { display: true, text: "Daily Load" },
-      },
-      acwr: {
-        position: "right",
-        grid: { display: false },
-        title: { display: true, text: "ACWR" },
-        min: 0,
-        max: 3,
-      },
-    },
+    };
   };
 
   return (
@@ -623,11 +805,52 @@ export default function DataDetailPage() {
           </section>
 
           <section style={styles.section}>
-            <SectionTitle title="負荷とACWR 推移 (45日)" />
-            <div style={styles.card}>
-              <div style={{ height: 320 }}>
-                <Chart type="bar" data={timelineChart} options={timelineOptions} />
-              </div>
+            <SectionTitle title="主要指標の推移とレンジ (30日)" />
+            <div className="metric-charts-grid" style={styles.chartsGrid}>
+              {trendMetrics.map((metric) => {
+                const chart = buildMetricTrendChart(metric);
+                return (
+                  <div key={metric.key} style={styles.card}>
+                    <div style={styles.chartTitle}>{metric.label}</div>
+                    <div style={{ height: 200 }}>
+                      <Chart type="line" data={chart.data} options={chart.options} />
+                    </div>
+                  </div>
+                );
+              })}
+              {summaryStats.map(({ metric, latestRow, range7, range28 }) => {
+                return (
+                  <div key={metric.key} style={styles.card}>
+                    <div style={styles.metricLabel}>{metric.label}</div>
+                    <div style={styles.metricValueLarge}>
+                      {formatMetricValue(
+                        latestRow?.workload?.[metric.dataKey],
+                        metric.digits,
+                        metric.unit
+                      )}
+                    </div>
+                    <div style={styles.metricMeta}>
+                      最終記録日: {latestRow?.date || "-"}
+                    </div>
+                    <div style={styles.rangeTable}>
+                      <div style={styles.rangeRow}>
+                        <span style={styles.rangeLabel}>7日</span>
+                        <span style={styles.rangeValue}>
+                          {formatRange(range7, metric.digits || 2, metric.unit)}
+                        </span>
+                        <span style={styles.rangeBadge}>{`n=${range7.count}`}</span>
+                      </div>
+                      <div style={styles.rangeRow}>
+                        <span style={styles.rangeLabel}>28日</span>
+                        <span style={styles.rangeValue}>
+                          {formatRange(range28, metric.digits || 2, metric.unit)}
+                        </span>
+                        <span style={styles.rangeBadge}>{`n=${range28.count}`}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         </section>
