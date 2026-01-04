@@ -165,21 +165,12 @@ class WorkloadAthleteListView(APIView):
             athlete_id=OuterRef("athlete_id")
         ).order_by("-date", "-id").values("risk_level")[:1]
 
-<<<<<<< HEAD
         qs = Athlete.objects.all()
         if only_unregistered:
             qs = qs.filter(
                 Q(athlete_name="") | Q(jersey_number="") | Q(uniform_name="")
             )
         elif not include_unregistered:
-=======
-        include_unregistered = str(
-            request.query_params.get("include_unregistered", "")
-        ).lower() in {"1", "true", "yes"}
-
-        qs = Athlete.objects.all()
-        if not include_unregistered:
->>>>>>> 7bf961eed9dca86d7e067515d00b7da74c8a421c
             qs = qs.filter(
                 athlete_name__gt="", jersey_number__gt="", uniform_name__gt=""
             )
