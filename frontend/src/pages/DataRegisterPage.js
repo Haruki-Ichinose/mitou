@@ -7,7 +7,6 @@ export default function DataRegisterPage() {
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState("idle");
   const [summary, setSummary] = useState(null);
-  const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyStatus, setHistoryStatus] = useState("idle");
   const [historyError, setHistoryError] = useState("");
@@ -35,15 +34,11 @@ export default function DataRegisterPage() {
     setSummary(null);
 
     try {
-<<<<<<< HEAD
-      const result = await uploadWorkloadCsv(file, "", allowDuplicate);
-=======
       const result = await uploadWorkloadCsv(
         file,
         loginId.trim(),
         allowDuplicate
       );
->>>>>>> 7bf961eed9dca86d7e067515d00b7da74c8a421c
       setSummary(result);
       setStatus("success");
       loadHistory();
@@ -138,15 +133,6 @@ export default function DataRegisterPage() {
                   className="file-input__native"
                 />
               </div>
-              <label className="upload-option">
-                <input
-                  type="checkbox"
-                  checked={allowDuplicate}
-                  onChange={(event) => setAllowDuplicate(event.target.checked)}
-                />
-                同じファイルでも再計算する
-              </label>
-
               <div className="form-field">
                 <label className="checkbox-row">
                   <input
