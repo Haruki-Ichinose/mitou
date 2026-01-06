@@ -618,6 +618,7 @@
   gap: 4px;
   justify-items: start;
   justify-content: start;
+  overflow: visible;
 }
 
 .player-card {
@@ -669,6 +670,10 @@
   position: relative;
 }
 
+.player-card--menu-open {
+  z-index: 40;
+}
+
 .player-card__button {
   border: none;
   background: transparent;
@@ -685,7 +690,7 @@
 
 .player-card__panel {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
   min-width: 210px;
@@ -697,7 +702,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  z-index: 10;
+  z-index: 60;
 }
 
 .player-card__action {
