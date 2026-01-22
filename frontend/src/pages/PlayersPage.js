@@ -230,7 +230,11 @@ export default function PlayersPage() {
               {athletes.map((athlete) => (
                 <div
                   key={athlete.athlete_id}
-                  className="player-card player-card--jersey"
+                  className={`player-card player-card--jersey${
+                    activeMenuId === athlete.athlete_id
+                      ? " player-card--menu-open"
+                      : ""
+                  }`}
                 >
                   <button
                     className="player-card__button"
