@@ -15,7 +15,6 @@ export default function PlayersPage() {
   const [candidateError, setCandidateError] = useState("");
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [athleteIdOptions, setAthleteIdOptions] = useState([]);
   const [activeMenuId, setActiveMenuId] = useState("");
   const [editingAthleteId, setEditingAthleteId] = useState("");
   const [editForm, setEditForm] = useState({
@@ -49,8 +48,23 @@ export default function PlayersPage() {
     }
   };
 
+  const loadCandidates = async () => {
+    setCandidateStatus("loading");
+    setCandidateError("");
+    try {
+      const list = await fetchAthletes({ only_unregistered: true });
+      setCandidates(list);
+      setCandidateStatus("success");
+    } catch (err) {
+      console.error(err);
+      setCandidateError("候補の取得に失敗しました");
+      setCandidateStatus("error");
+    }
+  };
+
   useEffect(() => {
     loadAthletes();
+    loadCandidates();
   }, []);
 
   useEffect(() => {
@@ -147,7 +161,6 @@ export default function PlayersPage() {
     event.preventDefault();
     setEditStatus("loading");
     setEditMessage("");
-    setActionMessage("");
 
     try {
       const payload = {
@@ -391,7 +404,6 @@ export default function PlayersPage() {
 
           {showForm && (
             <form onSubmit={handleSubmit} style={{ marginTop: 20 }}>
-              {/*}
               <div className="form-field">
                 <label htmlFor="candidate_athlete">CSV登録候補</label>
                 <select
@@ -400,11 +412,24 @@ export default function PlayersPage() {
                   onChange={handleCandidateSelect}
                 >
                   <option value="">候補から選択 (任意)</option>
-                  {candidates.map((item) => (
-                    <option key={item.athlete_id} value={item.athlete_id}>
-                      {formatCandidateLabel(item)}
-                    </option>
-                  ))}
+                  <optgroup label="GK">
+                    {candidates
+                      .filter((item) => item.position === "GK")
+                      .map((item) => (
+                        <option key={item.athlete_id} value={item.athlete_id}>
+                          {formatCandidateLabel(item)}
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="FP">
+                    {candidates
+                      .filter((item) => item.position !== "GK")
+                      .map((item) => (
+                        <option key={item.athlete_id} value={item.athlete_id}>
+                          {formatCandidateLabel(item)}
+                        </option>
+                      ))}
+                  </optgroup>
                 </select>
                 {candidateStatus === "loading" && (
                   <p className="form-hint">候補を読み込み中...</p>
@@ -416,7 +441,6 @@ export default function PlayersPage() {
                   <p className="form-hint">未登録の候補がありません。</p>
                 )}
               </div>
-              */}
               <div className="form-field">
                 <label htmlFor="athlete_id">athlete_id</label>
                 <input
@@ -425,14 +449,8 @@ export default function PlayersPage() {
                   value={form.athlete_id}
                   onChange={handleFormChange}
                   placeholder="csvファイルのathlete_id列と同じ値を入力"
-                  list="athlete-id-list"
                   required
                 />
-                <datalist id="athlete-id-list">
-                  {athleteIdOptions.map((athleteId) => (
-                    <option key={athleteId} value={athleteId} />
-                  ))}
-                </datalist>
               </div>
 
               <div className="form-field">

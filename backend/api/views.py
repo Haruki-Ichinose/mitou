@@ -1,6 +1,7 @@
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from datetime import date
 from django.conf import settings
 from django.db import transaction
 from django.utils.dateparse import parse_date
@@ -10,11 +11,13 @@ from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
 from .serializers import WorkloadIngestionRequestSerializer
 from .services import (
     WorkloadIngestionError,
     run_gps_pipeline,
+    parse_date as parse_stats_date,
+    safe_number,
+    to_float,
 )
 
 from .models import (
@@ -38,6 +41,46 @@ def _is_truthy(value) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _save_uploaded_file(uploaded_file, target_dir: Path) -> Path:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(getattr(uploaded_file, "name", "") or "").suffix or ".csv"
+    with NamedTemporaryFile(suffix=suffix, delete=False, dir=target_dir) as tmp_file:
+        for chunk in uploaded_file.chunks():
+            tmp_file.write(chunk)
+    return Path(tmp_file.name)
+
+
+def _run_pipeline_for_uploaded_file(
+    uploaded_file,
+    *,
+    uploaded_by: str,
+    allow_duplicate: bool,
+    target_dir: Path,
+    source_filename: str | None = None,
+    use_transaction: bool = False,
+):
+    temp_path: Path | None = None
+    try:
+        temp_path = _save_uploaded_file(uploaded_file, target_dir)
+        if use_transaction:
+            with transaction.atomic():
+                return run_gps_pipeline(
+                    temp_path,
+                    uploaded_by=uploaded_by,
+                    source_filename=source_filename,
+                    allow_duplicate=allow_duplicate,
+                )
+        return run_gps_pipeline(
+            temp_path,
+            uploaded_by=uploaded_by,
+            source_filename=source_filename,
+            allow_duplicate=allow_duplicate,
+        )
+    finally:
+        if temp_path and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
 class WorkloadIngestionView(APIView):
     parser_classes = (MultiPartParser, FormParser, JSONParser)
 
@@ -46,7 +89,6 @@ class WorkloadIngestionView(APIView):
         serializer.is_valid(raise_exception=True)
 
         uploaded_file = serializer.validated_data.get('file')
-        temp_path: Path | None = None
         uploaded_by = serializer.validated_data.get('uploaded_by') or ""
         allow_duplicate = serializer.validated_data.get("allow_duplicate", False)
 
@@ -56,32 +98,27 @@ class WorkloadIngestionView(APIView):
                 data_dir = Path(
                     getattr(settings, 'TRAINING_DATA_DIR', settings.BASE_DIR / 'data')
                 )
-                data_dir.mkdir(parents=True, exist_ok=True)
-
-                suffix = Path(getattr(uploaded_file, 'name', '') or '').suffix or '.csv'
-                with NamedTemporaryFile(suffix=suffix, delete=False, dir=data_dir) as tmp_file:
-                    for chunk in uploaded_file.chunks():
-                        tmp_file.write(chunk)
-                    temp_path = Path(tmp_file.name)
-                target_filename = str(temp_path)
                 original_filename = Path(getattr(uploaded_file, "name", "") or "").name
+                summary, features = _run_pipeline_for_uploaded_file(
+                    uploaded_file,
+                    uploaded_by=uploaded_by,
+                    allow_duplicate=allow_duplicate,
+                    target_dir=data_dir,
+                    source_filename=original_filename or None,
+                )
             else:
                 target_filename = serializer.validated_data['filename']
                 original_filename = ""
-
-            summary, features = run_gps_pipeline(
-                target_filename,
-                uploaded_by=uploaded_by,
-                source_filename=original_filename or None,
-                allow_duplicate=allow_duplicate,
-            )
+                summary, features = run_gps_pipeline(
+                    target_filename,
+                    uploaded_by=uploaded_by,
+                    source_filename=original_filename or None,
+                    allow_duplicate=allow_duplicate,
+                )
         except WorkloadIngestionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        finally:
-            if temp_path and temp_path.exists():
-                temp_path.unlink(missing_ok=True)
 
         payload = summary.as_dict()
         payload["updated_features"] = features
@@ -101,25 +138,16 @@ class GpsUploadView(APIView):
 
         uploaded_by = request.data.get("user") or request.data.get("uploaded_by") or ""
         allow_duplicate = _is_truthy(request.data.get("allow_duplicate"))
-        temp_path: Path | None = None
-
         try:
             upload_root = Path(getattr(settings, "MEDIA_ROOT", settings.BASE_DIR / "media"))
             upload_dir = upload_root / "uploads"
-            upload_dir.mkdir(parents=True, exist_ok=True)
-
-            suffix = Path(getattr(uploaded_file, "name", "") or "").suffix or ".csv"
-            with NamedTemporaryFile(suffix=suffix, delete=False, dir=upload_dir) as tmp_file:
-                for chunk in uploaded_file.chunks():
-                    tmp_file.write(chunk)
-                temp_path = Path(tmp_file.name)
-
-            with transaction.atomic():
-                summary, features = run_gps_pipeline(
-                    temp_path,
-                    uploaded_by=uploaded_by,
-                    allow_duplicate=allow_duplicate,
-                )
+            summary, features = _run_pipeline_for_uploaded_file(
+                uploaded_file,
+                uploaded_by=uploaded_by,
+                allow_duplicate=allow_duplicate,
+                target_dir=upload_dir,
+                use_transaction=True,
+            )
 
             if summary.skipped:
                 return Response(
@@ -148,9 +176,6 @@ class GpsUploadView(APIView):
                 {"status": "error", "message": str(exc)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        finally:
-            if temp_path and temp_path.exists():
-                temp_path.unlink(missing_ok=True)
 
 
 # === 以下、Workload関連ビュー（修正版） ===
@@ -355,6 +380,9 @@ class WorkloadAthleteTimeseriesView(APIView):
                     "val_asymmetry": (w.get("params") or {}).get("val_asymmetry") if w else None,
                     "decel_density": (w.get("params") or {}).get("decel_density") if w else None,
                     "time_to_feet": (w.get("params") or {}).get("time_to_feet") if w else None,
+                    "acwr_ima_decel": (w.get("params") or {}).get("acwr_ima_decel") if w else None,
+                    "metabolic_ratio": (w.get("params") or {}).get("metabolic_ratio") if w else None,
+                    "high_metabolic_dist": (w.get("params") or {}).get("high_metabolic_dist") if w else None,
                     "risk_level": w.get("risk_level") if w else None,
                     "risk_reasons": w.get("risk_reasons") if w else [],
                 },
@@ -397,4 +425,202 @@ class WorkloadUploadHistoryView(APIView):
                 }
             )
 
+        return Response(data, status=status.HTTP_200_OK)
+
+
+def _resolve_row_date(row) -> date | None:
+    if row.date:
+        return row.date
+    payload = row.raw_payload or {}
+    return parse_stats_date(
+        payload.get("date_")
+        or payload.get("date")
+        or payload.get("Date")
+        or payload.get("session_date")
+    )
+
+
+def _extract_session_label(row) -> str:
+    if row.session_name:
+        return str(row.session_name)
+    payload = row.raw_payload or {}
+    return str(payload.get("activity_name") or payload.get("period_name") or "")
+
+
+def _is_match_session(label: str) -> bool:
+    return "vs" in label.lower()
+
+
+def _collect_match_stats(
+    athlete_id: str,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+) -> list[dict]:
+    qs = (
+        GpsSessionRaw.objects.filter(athlete_id=athlete_id)
+        .order_by("date", "id")
+        .only("date", "session_name", "raw_payload")
+    )
+
+    buckets: dict[datetime.date, dict] = {}
+
+    for row in qs.iterator(chunk_size=2000):
+        row_date = _resolve_row_date(row)
+        if not row_date:
+            continue
+        if start and row_date < start:
+            continue
+        if end and row_date > end:
+            continue
+
+        session_label = _extract_session_label(row)
+        if not _is_match_session(session_label):
+            continue
+
+        payload = row.raw_payload or {}
+        bucket = buckets.setdefault(
+            row_date,
+            {
+                "date": row_date,
+                "session_names": set(),
+                "total_duration": 0.0,
+                "total_distance": 0.0,
+                "total_player_load": 0.0,
+                "hsr_distance": 0.0,
+                "high_decel_count": 0.0,
+                "max_vel": 0.0,
+                "max_heart_rate": 0.0,
+                "mean_hr_duration": 0.0,
+                "mean_hr_sum": 0.0,
+                "total_dive_count": 0.0,
+                "dive_left_count": 0.0,
+                "dive_right_count": 0.0,
+                "total_time_to_feet": 0.0,
+                "total_jumps": 0.0,
+            },
+        )
+
+        if session_label:
+            bucket["session_names"].add(session_label)
+
+        duration = to_float(payload.get("total_duration"))
+        bucket["total_duration"] += duration
+        bucket["total_distance"] += to_float(payload.get("total_distance"))
+        bucket["total_player_load"] += to_float(payload.get("total_player_load"))
+
+        band5 = to_float(payload.get("velocity_band5_total_distance"))
+        band6 = to_float(payload.get("velocity_band6_total_distance"))
+        bucket["hsr_distance"] += band5 + band6
+
+        max_vel = safe_number(payload.get("max_vel") or payload.get("Max Velocity"))
+        if max_vel is not None:
+            bucket["max_vel"] = max(bucket["max_vel"], max_vel)
+
+        max_hr = safe_number(payload.get("max_heart_rate") or payload.get("Max HR"))
+        if max_hr is not None:
+            bucket["max_heart_rate"] = max(bucket["max_heart_rate"], max_hr)
+
+        mean_hr = safe_number(payload.get("mean_heart_rate") or payload.get("Avg HR"))
+        if mean_hr is not None and duration > 0:
+            bucket["mean_hr_sum"] += mean_hr * duration
+            bucket["mean_hr_duration"] += duration
+
+        decel = safe_number(payload.get("high_decel_count"))
+        if decel is None:
+            decel = to_float(payload.get("ima_band2_decel_count")) + to_float(
+                payload.get("ima_band3_decel_count")
+            )
+        bucket["high_decel_count"] += decel
+
+        dive_left = to_float(payload.get("dive_left_count"))
+        dive_right = to_float(payload.get("dive_right_count"))
+        dive_centre = to_float(payload.get("dive_centre_count"))
+        bucket["dive_left_count"] += dive_left
+        bucket["dive_right_count"] += dive_right
+        total_dive_count = safe_number(payload.get("total_dive_count"))
+        if total_dive_count is None:
+            total_dive_count = dive_left + dive_right + dive_centre
+        bucket["total_dive_count"] += total_dive_count
+
+        bucket["total_time_to_feet"] += to_float(payload.get("total_time_to_feet"))
+        for key, value in payload.items():
+            if str(key).startswith("total_time_to_feet_"):
+                bucket["total_time_to_feet"] += to_float(value)
+
+        bucket["total_jumps"] += to_float(payload.get("total_jumps"))
+
+    results = []
+    for row_date in sorted(buckets.keys()):
+        entry = buckets[row_date]
+        total_dive_count = entry["total_dive_count"]
+        dive_total_lr = entry["dive_left_count"] + entry["dive_right_count"]
+        dive_asymmetry = (
+            abs(entry["dive_left_count"] - entry["dive_right_count"]) / dive_total_lr
+            if dive_total_lr > 0
+            else None
+        )
+        avg_time_to_feet = (
+            entry["total_time_to_feet"] / total_dive_count if total_dive_count > 0 else None
+        )
+        mean_heart_rate = (
+            entry["mean_hr_sum"] / entry["mean_hr_duration"]
+            if entry["mean_hr_duration"] > 0
+            else None
+        )
+        efficiency_index = (
+            entry["total_player_load"] / mean_heart_rate
+            if mean_heart_rate and mean_heart_rate > 0
+            else None
+        )
+        results.append(
+            {
+                "date": entry["date"].isoformat(),
+                "session_names": sorted(entry["session_names"]),
+                "total_duration": entry["total_duration"],
+                "total_distance": entry["total_distance"],
+                "total_player_load": entry["total_player_load"],
+                "hsr_distance": entry["hsr_distance"],
+                "high_decel_count": int(entry["high_decel_count"]),
+                "max_vel": entry["max_vel"] or 0.0,
+                "max_heart_rate": entry["max_heart_rate"] or 0.0,
+                "mean_heart_rate": mean_heart_rate,
+                "efficiency_index": efficiency_index,
+                "total_dive_count": int(total_dive_count),
+                "dive_asymmetry": dive_asymmetry,
+                "avg_time_to_feet": avg_time_to_feet,
+                "total_jumps": entry["total_jumps"],
+            }
+        )
+    return results
+
+
+class WorkloadAthleteCalendarView(APIView):
+    def get(self, request, athlete_id: str):
+        start = _parse_ymd(request.query_params.get("start"))
+        end = _parse_ymd(request.query_params.get("end"))
+
+        qs = WorkloadFeaturesDaily.objects.filter(athlete_id=athlete_id).order_by("date")
+        if start:
+            qs = qs.filter(date__gte=start)
+        if end:
+            qs = qs.filter(date__lte=end)
+
+        data = [
+            {
+                "date": row.date.isoformat(),
+                "risk_level": row.risk_level,
+                "risk_reasons": row.risk_reasons or [],
+            }
+            for row in qs
+        ]
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class WorkloadAthleteMatchStatsView(APIView):
+    def get(self, request, athlete_id: str):
+        start = _parse_ymd(request.query_params.get("start"))
+        end = _parse_ymd(request.query_params.get("end"))
+
+        data = _collect_match_stats(athlete_id, start=start, end=end)
         return Response(data, status=status.HTTP_200_OK)

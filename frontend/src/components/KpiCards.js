@@ -39,8 +39,8 @@ export default function WorkloadChart({ rows, isGk }) {
         ) : (
           <>
             <MetricBtn label="総走行距離" active={metric === "total_distance"} onClick={() => setMetric("total_distance")} />
-            <MetricBtn label="スプリント距離(HSR)" active={metric === "hsr_distance"} onClick={() => setMetric("hsr_distance")} />
-            <MetricBtn label="プレイヤーロード" active={metric === "total_player_load"} onClick={() => setMetric("total_player_load")} />
+            <MetricBtn label="高強度走行距離" active={metric === "hsr_distance"} onClick={() => setMetric("hsr_distance")} />
+            <MetricBtn label="負荷" active={metric === "total_player_load"} onClick={() => setMetric("total_player_load")} />
           </>
         )}
       </div>

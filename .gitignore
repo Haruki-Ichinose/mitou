@@ -60,3 +60,6 @@ data/
 notebooks/log/
 notebooks/test.ipynb
 notebooks/.ipynb_checkpoints/
+
+# local contributor guide (not tracked)
+AGENTS.md

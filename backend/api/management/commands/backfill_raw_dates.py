@@ -1,23 +1,8 @@
-from datetime import datetime
-
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from api.models import GpsSessionRaw
-
-
-def parse_date_any(x):
-    if not x:
-        return None
-    s = str(x).strip()
-    if not s:
-        return None
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(s, fmt).date()
-        except ValueError:
-            pass
-    return None
+from api.services import parse_date
 
 
 class Command(BaseCommand):
@@ -48,7 +33,7 @@ class Command(BaseCommand):
         buf = []
 
         for r in qs.iterator(chunk_size=batch_size):
-            date_ = parse_date_any(r.raw_payload.get("date_"))
+            date_ = parse_date(r.raw_payload.get("date_"))
             if date_ is None:
                 continue
             r.date = date_
