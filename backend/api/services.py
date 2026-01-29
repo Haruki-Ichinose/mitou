@@ -82,10 +82,6 @@ def parse_date(value):
     return None
 
 
-def parse_date_any(value):
-    return parse_date(value)
-
-
 def to_float(value):
     if value is None:
         return 0.0
@@ -712,7 +708,7 @@ def rebuild_gps_daily(
     for row in qs.iterator(chunk_size=2000):
         date_ = row.date
         if not date_:
-            date_ = parse_date_any(
+            date_ = parse_date(
                 row.raw_payload.get("date_")
                 or row.raw_payload.get("date")
                 or row.raw_payload.get("Date")
@@ -857,77 +853,180 @@ def safe_number(value: float | int | None):
     return v if np.isfinite(v) else None
 
 
+RISK_THRESHOLDS = {
+    "acwr_risky": 1.5,
+    "acwr_caution": 1.3,
+    "monotony_caution": 2.5,
+    "efficiency_caution": 0.5,
+    "gk_time_to_feet_risky": 2.0,
+    "gk_time_to_feet_caution": 1.5,
+    "asymmetry_caution": 0.4,
+}
+
+
+def _format_reason(label: str, value: float, suffix: str = "") -> str:
+    return f"{label} ({value:.2f}{suffix})"
+
+
+def _eval_high(
+    value: float | None,
+    *,
+    label: str,
+    caution: float | None = None,
+    risky: float | None = None,
+    suffix: str = "",
+    label_caution: str | None = None,
+    label_risky: str | None = None,
+) -> tuple[str, str] | None:
+    if value is None:
+        return None
+    if risky is not None and value >= risky:
+        reason_label = label_risky or f"{label} High"
+        return "risky", _format_reason(reason_label, value, suffix)
+    if caution is not None and value >= caution:
+        reason_label = label_caution or f"{label} Elevated"
+        return "caution", _format_reason(reason_label, value, suffix)
+    return None
+
+
+def _eval_low(
+    value: float | None,
+    *,
+    label: str,
+    caution: float | None = None,
+    risky: float | None = None,
+    suffix: str = "",
+    label_caution: str | None = None,
+    label_risky: str | None = None,
+) -> tuple[str, str] | None:
+    if value is None:
+        return None
+    if risky is not None and value <= risky:
+        reason_label = label_risky or f"{label} Low"
+        return "risky", _format_reason(reason_label, value, suffix)
+    if caution is not None and value <= caution:
+        reason_label = label_caution or f"{label} Low"
+        return "caution", _format_reason(reason_label, value, suffix)
+    return None
+
+
+def _resolve_risk_level(triggers: list[tuple[str, str, str]]) -> tuple[str, list[str]]:
+    if not triggers:
+        return "safety", []
+
+    reasons = [reason for _, _, reason in triggers]
+    has_risky = any(level == "risky" for level, _, _ in triggers)
+    if has_risky:
+        return "risky", reasons
+
+    caution_count = sum(1 for level, _, _ in triggers if level == "caution")
+    has_primary_caution = any(
+        level == "caution" and importance == "primary"
+        for level, importance, _ in triggers
+    )
+    if has_primary_caution or caution_count >= 2:
+        return "caution", reasons
+    return "safety", []
+
+
 def classify_fp(
-    acwr_dist: float | None,
+    acwr_load: float | None,
     acwr_hsr: float | None,
+    acwr_ima_decel: float | None,
     monotony: float | None,
-    efficiency: float | None = None,  # [追加]
+    efficiency: float | None = None,
 ) -> tuple[str, list[str]]:
-    reasons = []
-    level = "safety"
+    triggers: list[tuple[str, str, str]] = []
 
-    # 1. 怪我リスク (HSRの急増)
-    if acwr_hsr and acwr_hsr > 1.5:
-        level = "risky"
-        reasons.append(f"HSR ACWR High ({acwr_hsr:.2f})")
-    elif acwr_hsr and acwr_hsr > 1.3:
-        if level == "safety": level = "caution"
-        reasons.append(f"HSR ACWR Elevated ({acwr_hsr:.2f})")
+    hsr_trigger = _eval_high(
+        acwr_hsr,
+        label="HSR ACWR",
+        risky=RISK_THRESHOLDS["acwr_risky"],
+        caution=RISK_THRESHOLDS["acwr_caution"],
+    )
+    if hsr_trigger:
+        triggers.append((hsr_trigger[0], "primary", hsr_trigger[1]))
 
-    # 2. コンディション (心拍効率)
-    # 値が低い＝同じ動きでも心拍が高い＝疲労/不調
-    # ※閾値 (0.5) はチームのデータを見て調整してください
-    if efficiency and efficiency < 0.5:
-        if level != "risky": level = "caution"
-        reasons.append(f"Low Efficiency ({efficiency:.2f})")
+    decel_trigger = _eval_high(
+        acwr_ima_decel,
+        label="High Decel ACWR",
+        risky=RISK_THRESHOLDS["acwr_risky"],
+        caution=RISK_THRESHOLDS["acwr_caution"],
+    )
+    if decel_trigger:
+        triggers.append((decel_trigger[0], "primary", decel_trigger[1]))
 
-    # 3. オーバーワーク (単調性)
-    if monotony and monotony > 2.5:
-        if level == "safety": level = "caution"
-        reasons.append(f"High Monotony ({monotony:.2f})")
+    efficiency_trigger = _eval_low(
+        efficiency,
+        label="Efficiency",
+        caution=RISK_THRESHOLDS["efficiency_caution"],
+    )
+    if efficiency_trigger:
+        triggers.append((efficiency_trigger[0], "secondary", efficiency_trigger[1]))
 
-    # 4. 距離ACWR (補助)
-    if acwr_dist and acwr_dist > 1.5:
-        if level == "safety": level = "caution"
-        reasons.append(f"Distance ACWR High ({acwr_dist:.2f})")
+    monotony_trigger = _eval_high(
+        monotony,
+        label="Monotony",
+        caution=RISK_THRESHOLDS["monotony_caution"],
+    )
+    if monotony_trigger:
+        triggers.append((monotony_trigger[0], "secondary", monotony_trigger[1]))
 
-    return level, reasons
+    load_trigger = _eval_high(
+        acwr_load,
+        label="Load ACWR",
+        caution=RISK_THRESHOLDS["acwr_risky"],
+    )
+    if load_trigger:
+        triggers.append((load_trigger[0], "secondary", load_trigger[1]))
+
+    return _resolve_risk_level(triggers)
 
 
 def classify_gk(
     acwr_dive: float | None,
     asymmetry: float | None,
     monotony: float | None,
-    time_to_feet: float | None = None,  # [追加]
+    time_to_feet: float | None = None,
 ) -> tuple[str, list[str]]:
-    reasons = []
-    level = "safety"
+    triggers: list[tuple[str, str, str]] = []
 
-    # 1. コンディション (キレ・反応速度)
-    # 2.0秒を超えると明らかに遅い＝疲労
-    if time_to_feet and time_to_feet > 2.0:
-        level = "risky"
-        reasons.append(f"Slow Recovery Time ({time_to_feet:.2f}s)")
-    elif time_to_feet and time_to_feet > 1.5:
-        if level == "safety": level = "caution"
-        reasons.append(f"Recovery Time Elevated ({time_to_feet:.2f}s)")
+    time_trigger = _eval_high(
+        time_to_feet,
+        label="Recovery Time",
+        risky=RISK_THRESHOLDS["gk_time_to_feet_risky"],
+        caution=RISK_THRESHOLDS["gk_time_to_feet_caution"],
+        suffix="s",
+    )
+    if time_trigger:
+        triggers.append((time_trigger[0], "primary", time_trigger[1]))
 
-    # 2. 怪我リスク (ダイブ負荷急増)
-    if acwr_dive and acwr_dive > 1.5:
-        level = "risky"
-        reasons.append(f"Dive ACWR High ({acwr_dive:.2f})")
+    dive_trigger = _eval_high(
+        acwr_dive,
+        label="Dive ACWR",
+        risky=RISK_THRESHOLDS["acwr_risky"],
+        caution=RISK_THRESHOLDS["acwr_caution"],
+    )
+    if dive_trigger:
+        triggers.append((dive_trigger[0], "primary", dive_trigger[1]))
 
-    # 3. 左右差 (バランス)
-    if asymmetry and asymmetry > 0.4:
-        if level == "safety": level = "caution"
-        reasons.append(f"High Asymmetry ({asymmetry:.2f})")
-    
-    # 4. 単調性
-    if monotony and monotony > 2.5:
-        if level == "safety": level = "caution"
-        reasons.append(f"High Monotony ({monotony:.2f})")
+    asym_trigger = _eval_high(
+        asymmetry,
+        label="Asymmetry",
+        caution=RISK_THRESHOLDS["asymmetry_caution"],
+    )
+    if asym_trigger:
+        triggers.append((asym_trigger[0], "secondary", asym_trigger[1]))
 
-    return level, reasons
+    monotony_trigger = _eval_high(
+        monotony,
+        label="Monotony",
+        caution=RISK_THRESHOLDS["monotony_caution"],
+    )
+    if monotony_trigger:
+        triggers.append((monotony_trigger[0], "secondary", monotony_trigger[1]))
+
+    return _resolve_risk_level(triggers)
 
 
 def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> int:
@@ -1003,6 +1102,14 @@ def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> in
         decel_count = high_decel_count
         ima_left = metrics_series.apply(lambda m: to_float(m.get("ima_band2_left_count")))
         ima_right = metrics_series.apply(lambda m: to_float(m.get("ima_band2_right_count")))
+        high_ima_decel = metrics_series.apply(lambda m: to_float(m.get("ima_band3_decel_count")))
+        high_metabolic_dist = metrics_series.apply(
+            lambda m: (
+                to_float(m.get("metabolic_power_band4_total_distance"))
+                + to_float(m.get("metabolic_power_band5_total_distance"))
+                + to_float(m.get("metabolic_power_band6_total_distance"))
+            )
+        )
         dive_left = metrics_series.apply(lambda m: to_float(m.get("dive_left_count")))
         dive_right = metrics_series.apply(lambda m: to_float(m.get("dive_right_count")))
         dive_centre = metrics_series.apply(lambda m: to_float(m.get("dive_centre_count")))
@@ -1012,10 +1119,12 @@ def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> in
 
         acwr_hsr = np.full(len(group), np.nan)
         acwr_dive = np.full(len(group), np.nan)
+        acwr_ima_decel = np.full(len(group), np.nan)
         asym_val = np.zeros(len(group))
         decel_density = np.zeros(len(group))
         load_per_meter = np.zeros(len(group))
         efficiency = np.full(len(group), np.nan)
+        metabolic_ratio = np.full(len(group), np.nan)
 
         dist_safe = np.maximum(total_distance.values, EPS)
         dist_km = dist_safe / 1000.0
@@ -1025,6 +1134,12 @@ def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> in
         )
         efficiency = np.where(
             mean_heart_rate.values > 0, total_player_load.values / mean_heart_rate.values, np.nan
+        )
+        _, _, acwr_ima_decel = calc_acwr_ewma(high_ima_decel.astype(float))
+        metabolic_ratio = np.where(
+            total_distance.values > 0,
+            high_metabolic_dist.values / dist_safe,
+            np.nan,
         )
 
         if is_gk:
@@ -1042,11 +1157,14 @@ def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> in
             acwr_load_v = safe_number(acwr_load[i])
             acwr_hsr_v = safe_number(acwr_hsr[i])
             acwr_dive_v = safe_number(acwr_dive[i])
+            acwr_ima_decel_v = safe_number(acwr_ima_decel[i])
             monotony_v = safe_number(monotony[i])
             asym_v = safe_number(asym_val[i])
             lpm_v = safe_number(load_per_meter[i])
             decel_density_v = safe_number(decel_density[i])
             efficiency_v = safe_number(efficiency[i])
+            metabolic_ratio_v = safe_number(metabolic_ratio[i])
+            high_metabolic_dist_v = safe_number(high_metabolic_dist.iat[i])
             time_to_feet_v = safe_number(avg_time_to_feet.iat[i])
 
             if is_gk:
@@ -1060,6 +1178,7 @@ def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> in
                 risk_level, risk_reasons = classify_fp(
                     acwr_load_v,
                     acwr_hsr_v,
+                    acwr_ima_decel_v,
                     monotony_v,
                     efficiency=efficiency_v,
                 )
@@ -1080,6 +1199,9 @@ def rebuild_workload_features(*, athlete_ids: Iterable[str] | None = None) -> in
                         "val_asymmetry": asym_v,
                         "decel_density": decel_density_v,
                         "time_to_feet": time_to_feet_v,
+                        "acwr_ima_decel": acwr_ima_decel_v,
+                        "metabolic_ratio": metabolic_ratio_v,
+                        "high_metabolic_dist": high_metabolic_dist_v,
                     },
                 )
             )

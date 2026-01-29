@@ -15,6 +15,7 @@ import {
   Legend,
   TimeScale,
   Filler,
+  RadialLinearScale,
 } from "chart.js";
 import annotationPlugin from "chartjs-plugin-annotation";
 
@@ -28,6 +29,7 @@ ChartJS.register(
   Legend,
   TimeScale,
   Filler,
+  RadialLinearScale,
   annotationPlugin
 );
 

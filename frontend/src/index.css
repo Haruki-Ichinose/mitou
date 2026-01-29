@@ -1,6 +1,8 @@
 :root {
   --font-display: "Oswald", "Bebas Neue", "Avenir Next Condensed", "Hiragino Sans", "Noto Sans JP", sans-serif;
   --font-body: "Sora", "Avenir Next", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --text-base: 16px;
+  --text-scale: 1.03;
   --ink-900: #0f172a;
   --ink-600: #475569;
   --surface: #ffffff;
@@ -24,6 +26,8 @@ body {
   font-family: var(--font-body);
   color: var(--ink-900);
   background-color: #fff7ed;
+  font-size: calc(var(--text-base) * var(--text-scale));
+  line-height: 1.6;
 }
 
 a {

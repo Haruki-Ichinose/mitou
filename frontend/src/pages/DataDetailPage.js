@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Chart } from "react-chartjs-2";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { fetchAthletes, fetchTimeseries } from "../api";
+import {
+  fetchAthleteCalendar,
+  fetchAthletes,
+  fetchTimeseries,
+} from "../api";
 import titleLogo from "../components/title.jpg";
 
 const theme = {
@@ -85,6 +89,7 @@ const styles = {
     borderRadius: 999,
     fontWeight: 800,
     fontSize: 12,
+    whiteSpace: "nowrap",
     background: isGk ? theme.gkBg : theme.fpBg,
     color: isGk ? theme.gkText : theme.fpText,
   }),
@@ -171,6 +176,7 @@ const styles = {
   },
   kpiStack: { display: "grid", gridTemplateColumns: "1fr", gap: 12 },
   metricLabel: { fontSize: 12, fontWeight: 700, color: theme.textSub, letterSpacing: "0.08em" },
+  metricDesc: { fontSize: 11, color: theme.textSub, marginBottom: 6 },
   metricValue: { fontSize: 26, fontWeight: 800, color: theme.textMain },
   metricHint: { fontSize: 12, color: theme.textSub },
   decisionGrid: {
@@ -187,6 +193,9 @@ const styles = {
       highlight ? (riskPalette[level] || riskPalette.safety).accent : theme.border
     }`,
     boxShadow: highlight ? "0 12px 24px rgba(0,0,0,0.08)" : theme.shadow,
+    borderLeft: highlight
+      ? `6px solid ${(riskPalette[level] || riskPalette.safety).accent}`
+      : `1px solid ${theme.border}`,
   }),
   metricTag: (level) => ({
     position: "absolute",
@@ -305,10 +314,18 @@ export default function DataDetailPage() {
   const [athleteId, setAthleteId] = useState(athleteIdParam || "");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [calendarDays, setCalendarDays] = useState([]);
+  const [calendarMonth, setCalendarMonth] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
 
   useEffect(() => {
     setAthleteId(athleteIdParam || "");
   }, [athleteIdParam]);
+
+  useEffect(() => {
+    setSelectedDate(null);
+    setCalendarMonth(null);
+  }, [athleteId]);
 
   useEffect(() => {
     let mounted = true;
@@ -350,49 +367,92 @@ export default function DataDetailPage() {
     };
   }, [athleteId]);
 
+  useEffect(() => {
+    if (!athleteId) return;
+    let mounted = true;
+    const loadCalendar = async () => {
+      try {
+        const days = await fetchAthleteCalendar(athleteId);
+        if (!mounted) return;
+        setCalendarDays(days);
+        if (days.length > 0) {
+          const lastDate = days[days.length - 1].date;
+          setSelectedDate((prev) => prev || lastDate);
+          setCalendarMonth(getMonthAnchor(parseDateKey(lastDate)));
+        }
+      } catch (e) {
+        console.error(e);
+        if (mounted) setCalendarDays([]);
+      }
+    };
+    loadCalendar();
+    return () => {
+      mounted = false;
+    };
+  }, [athleteId]);
+
   const currentAthlete = useMemo(
     () => athletes.find((athlete) => athlete.athlete_id === athleteId),
     [athletes, athleteId]
   );
   const isGk = currentAthlete?.position === "GK";
 
+  const selectedRow = useMemo(() => {
+    if (!selectedDate) return null;
+    return rows.find((row) => normalizeDateKey(row.date) === selectedDate) || null;
+  }, [rows, selectedDate]);
+
   const viewRows = useMemo(() => {
     if (!rows?.length) return [];
-    const lastDateRaw = rows[rows.length - 1]?.date;
-    const lastDate = lastDateRaw ? new Date(lastDateRaw) : null;
-    if (!lastDate || Number.isNaN(lastDate.valueOf())) return rows.slice(-30);
-    const start = new Date(lastDate);
+    const anchorKey = selectedDate || normalizeDateKey(rows[rows.length - 1]?.date);
+    const anchorDate = parseDateKey(anchorKey);
+    if (!anchorDate || Number.isNaN(anchorDate.valueOf())) return rows.slice(-30);
+    const start = new Date(anchorDate);
     start.setDate(start.getDate() - 30);
     return rows.filter((row) => {
-      const rowDate = new Date(row.date);
-      return rowDate >= start && rowDate <= lastDate;
+      const rowDate = parseDateKey(row.date);
+      return rowDate && rowDate >= start && rowDate <= anchorDate;
     });
-  }, [rows]);
+  }, [rows, selectedDate]);
 
-  const latest = useMemo(() => viewRows[viewRows.length - 1], [viewRows]);
-  const latestWorkload = latest?.workload || {};
+  const activeRow = useMemo(
+    () => selectedRow || viewRows[viewRows.length - 1],
+    [selectedRow, viewRows]
+  );
+  const latestWorkload = activeRow?.workload || {};
   const riskLevel = latestWorkload.risk_level || "safety";
-  const riskReasons = latestWorkload.risk_reasons || [];
+  const riskReasons = (latestWorkload.risk_reasons || []).map((reason) =>
+    translateRiskReason(reason)
+  );
   const riskSummary = riskText[riskLevel] || riskText.safety;
+  const metricOrder = useMemo(
+    () =>
+      isGk
+        ? ["acwr_dive", "time_to_feet", "monotony", "asymmetry"]
+        : ["acwr_hsr", "acwr_load", "acwr_ima_decel", "monotony", "efficiency"],
+    [isGk]
+  );
 
   const riskFlags = useMemo(() => {
     const flags = {
       hsr: false,
       load: false,
-      monotony: false,
+      highDecelAcwr: false,
       efficiency: false,
+      monotony: false,
       timeToFeet: false,
       diveAcwr: false,
       asymmetry: false,
     };
     riskReasons.forEach((reason) => {
-      if (reason.includes("HSR ACWR")) flags.hsr = true;
-      if (reason.includes("Distance ACWR")) flags.load = true;
-      if (reason.includes("High Monotony")) flags.monotony = true;
-      if (reason.includes("Low Efficiency")) flags.efficiency = true;
-      if (reason.includes("Recovery Time")) flags.timeToFeet = true;
-      if (reason.includes("Dive ACWR")) flags.diveAcwr = true;
-      if (reason.includes("High Asymmetry")) flags.asymmetry = true;
+      if (reason.includes("高強度走行ACWR")) flags.hsr = true;
+      if (reason.includes("負荷ACWR")) flags.load = true;
+      if (reason.includes("急減速ACWR")) flags.highDecelAcwr = true;
+      if (reason.includes("効率")) flags.efficiency = true;
+      if (reason.includes("単調性")) flags.monotony = true;
+      if (reason.includes("起き上がり時間")) flags.timeToFeet = true;
+      if (reason.includes("ダイブACWR")) flags.diveAcwr = true;
+      if (reason.includes("左右差")) flags.asymmetry = true;
     });
     return flags;
   }, [riskReasons]);
@@ -402,7 +462,8 @@ export default function DataDetailPage() {
       return [
         {
           key: "acwr_dive",
-          label: "Dive ACWR",
+          label: "ダイブACWR",
+          desc: "ダイブ負荷の急増バランス",
           value: latestWorkload.acwr_dive,
           threshold: ">= 1.5 : Risky",
           highlight: riskFlags.diveAcwr,
@@ -410,16 +471,18 @@ export default function DataDetailPage() {
         },
         {
           key: "time_to_feet",
-          label: "Time to Feet",
+          label: "起き上がり時間",
+          desc: "反応・疲労の目安",
           value: latestWorkload.time_to_feet,
-          unit: "s",
+          unit: "秒",
           threshold: ">= 1.5 : Caution / >= 2.0 : Risky",
           highlight: riskFlags.timeToFeet,
           gauge: { min: 0, max: 3, warn: 1.5, danger: 2.0 },
         },
         {
           key: "asymmetry",
-          label: "Asymmetry",
+          label: "左右差",
+          desc: "左右のバランス",
           value: latestWorkload.val_asymmetry,
           threshold: ">= 0.4 : Caution",
           highlight: riskFlags.asymmetry,
@@ -427,7 +490,8 @@ export default function DataDetailPage() {
         },
         {
           key: "monotony",
-          label: "Monotony",
+          label: "単調性",
+          desc: "負荷の偏り",
           value: latestWorkload.monotony_load,
           threshold: ">= 2.5 : Caution",
           highlight: riskFlags.monotony,
@@ -438,7 +502,8 @@ export default function DataDetailPage() {
     return [
       {
         key: "acwr_hsr",
-        label: "HSR ACWR",
+        label: "高強度走行ACWR",
+        desc: "高強度走行の急増バランス",
         value: latestWorkload.acwr_hsr,
         threshold: ">= 1.3 : Caution / >= 1.5 : Risky",
         highlight: riskFlags.hsr,
@@ -446,28 +511,40 @@ export default function DataDetailPage() {
       },
       {
         key: "acwr_load",
-        label: "Load ACWR",
+        label: "負荷ACWR",
+        desc: "全体負荷の急増バランス",
         value: latestWorkload.acwr_load,
         threshold: ">= 1.5 : Caution",
         highlight: riskFlags.load,
         gauge: { min: 0, max: 2.5, warn: 1.5 },
       },
       {
-        key: "monotony",
-        label: "Monotony",
-        value: latestWorkload.monotony_load,
-        threshold: ">= 2.5 : Caution",
-        highlight: riskFlags.monotony,
-        gauge: { min: 0, max: 4, warn: 2.5 },
+        key: "acwr_ima_decel",
+        label: "急減速ACWR",
+        desc: "急減速の急増バランス",
+        value: latestWorkload.acwr_ima_decel,
+        threshold: ">= 1.3 : Caution / >= 1.5 : Risky",
+        highlight: riskFlags.highDecelAcwr,
+        gauge: { min: 0, max: 2.5, warn: 1.3, danger: 1.5 },
       },
       {
         key: "efficiency",
-        label: "Efficiency",
+        label: "効率",
+        desc: "負荷と心拍の効率",
         value: latestWorkload.efficiency_index,
         threshold: "<= 0.5 : Caution",
         highlight: riskFlags.efficiency,
         gauge: { min: 0, max: 1.2, warn: 0.5 },
         note: "低いほどリスク",
+      },
+      {
+        key: "monotony",
+        label: "単調性",
+        desc: "負荷の偏り",
+        value: latestWorkload.monotony_load,
+        threshold: ">= 2.5 : Caution",
+        highlight: riskFlags.monotony,
+        gauge: { min: 0, max: 4, warn: 2.5 },
       },
     ];
   }, [isGk, latestWorkload, riskFlags]);
@@ -477,19 +554,31 @@ export default function DataDetailPage() {
       return [
         {
           key: "acwr_dive",
-          label: "Dive ACWR",
+          label: "ダイブACWR",
           dataKey: "acwr_dive",
-          color: "#ef4444",
-          fill: "rgba(239, 68, 68, 0.18)",
+          color: "#475569",
+          fill: "rgba(71, 85, 105, 0.08)",
           thresholds: [{ value: 1.5, label: "Risky 1.5", color: riskPalette.risky.accent }],
           suggestedMax: 2.5,
         },
         {
+          key: "time_to_feet",
+          label: "起き上がり時間",
+          dataKey: "time_to_feet",
+          color: "#475569",
+          fill: "rgba(71, 85, 105, 0.08)",
+          thresholds: [
+            { value: 1.5, label: "Caution 1.5秒", color: riskPalette.caution.accent },
+            { value: 2.0, label: "Risky 2.0秒", color: riskPalette.risky.accent },
+          ],
+          suggestedMax: 3,
+        },
+        {
           key: "monotony",
-          label: "Monotony",
+          label: "単調性",
           dataKey: "monotony_load",
-          color: "#0ea5e9",
-          fill: "rgba(14, 165, 233, 0.18)",
+          color: "#475569",
+          fill: "rgba(71, 85, 105, 0.08)",
           thresholds: [{ value: 2.5, label: "Caution 2.5", color: riskPalette.caution.accent }],
           suggestedMax: 4,
         },
@@ -499,10 +588,10 @@ export default function DataDetailPage() {
     return [
       {
         key: "acwr_hsr",
-        label: "HSR ACWR",
+        label: "高強度走行ACWR",
         dataKey: "acwr_hsr",
-        color: "#ef4444",
-        fill: "rgba(239, 68, 68, 0.18)",
+        color: "#475569",
+        fill: "rgba(71, 85, 105, 0.08)",
         thresholds: [
           { value: 1.3, label: "Caution 1.3", color: riskPalette.caution.accent },
           { value: 1.5, label: "Risky 1.5", color: riskPalette.risky.accent },
@@ -511,19 +600,31 @@ export default function DataDetailPage() {
       },
       {
         key: "acwr_load",
-        label: "Load ACWR",
+        label: "負荷ACWR",
         dataKey: "acwr_load",
-        color: "#f59e0b",
-        fill: "rgba(245, 158, 11, 0.18)",
+        color: "#475569",
+        fill: "rgba(71, 85, 105, 0.08)",
         thresholds: [{ value: 1.5, label: "Caution 1.5", color: riskPalette.caution.accent }],
         suggestedMax: 2.5,
       },
       {
+        key: "acwr_ima_decel",
+        label: "急減速ACWR",
+        dataKey: "acwr_ima_decel",
+        color: "#475569",
+        fill: "rgba(71, 85, 105, 0.08)",
+        thresholds: [
+          { value: 1.3, label: "Caution 1.3", color: riskPalette.caution.accent },
+          { value: 1.5, label: "Risky 1.5", color: riskPalette.risky.accent },
+        ],
+        suggestedMax: 2.5,
+      },
+      {
         key: "monotony",
-        label: "Monotony",
+        label: "単調性",
         dataKey: "monotony_load",
-        color: "#0ea5e9",
-        fill: "rgba(14, 165, 233, 0.18)",
+        color: "#475569",
+        fill: "rgba(71, 85, 105, 0.08)",
         thresholds: [{ value: 2.5, label: "Caution 2.5", color: riskPalette.caution.accent }],
         suggestedMax: 4,
       },
@@ -534,16 +635,8 @@ export default function DataDetailPage() {
     if (isGk) {
       return [
         {
-          key: "time_to_feet",
-          label: "Time to Feet",
-          dataKey: "time_to_feet",
-          unit: "s",
-          digits: 2,
-          isValid: (_row, value) => value > 0,
-        },
-        {
           key: "asymmetry",
-          label: "Asymmetry",
+          label: "左右差",
           dataKey: "val_asymmetry",
           digits: 2,
           isValid: (row, _value) => (row.total_dive_count || 0) > 0,
@@ -554,7 +647,7 @@ export default function DataDetailPage() {
     return [
       {
         key: "efficiency",
-        label: "Efficiency",
+        label: "効率",
         dataKey: "efficiency_index",
         digits: 2,
         isValid: (row, _value) => (row.mean_heart_rate || 0) > 0,
@@ -618,11 +711,54 @@ export default function DataDetailPage() {
     });
   }, [rows, summaryMetrics]);
 
+  const orderedTrendMetrics = useMemo(
+    () => sortByOrder(trendMetrics, metricOrder, (item) => item.key),
+    [trendMetrics, metricOrder]
+  );
+
+  const orderedDecisionMetrics = useMemo(
+    () => sortByOrder(decisionMetrics, metricOrder, (item) => item.key),
+    [decisionMetrics, metricOrder]
+  );
+
+  const orderedSummaryStats = useMemo(
+    () => sortByOrder(summaryStats, metricOrder, (item) => item.metric.key),
+    [summaryStats, metricOrder]
+  );
+
+  const calendarMap = useMemo(() => {
+    const map = new Map();
+    calendarDays.forEach((day) => {
+      if (day?.date) {
+        map.set(day.date, day);
+      }
+    });
+    return map;
+  }, [calendarDays]);
+
+  const latestMonthAnchor = useMemo(() => {
+    const latestKey =
+      calendarDays[calendarDays.length - 1]?.date ||
+      normalizeDateKey(rows[rows.length - 1]?.date);
+    const latestDate = parseDateKey(latestKey);
+    return getMonthAnchor(latestDate || new Date());
+  }, [calendarDays, rows]);
+
+  const calendarAnchor = useMemo(
+    () => calendarMonth || latestMonthAnchor || getMonthAnchor(new Date()),
+    [calendarMonth, latestMonthAnchor]
+  );
+
+  const calendarCells = useMemo(
+    () => buildCalendarCells(calendarAnchor),
+    [calendarAnchor]
+  );
+
   const formatRange = (range, digits, unit = "") => {
     if (!range || range.count === 0) return "データなし";
     const min = range.min.toFixed(digits);
     const max = range.max.toFixed(digits);
-    return unit ? `${min} - ${max} ${unit}` : `${min} - ${max}`;
+    return unit ? `${min}〜${max}${unit}` : `${min}〜${max}`;
   };
 
   const buildMetricTrendChart = (metric) => {
@@ -658,9 +794,10 @@ export default function DataDetailPage() {
             borderColor: metric.color,
             backgroundColor: metric.fill,
             tension: 0.3,
-            pointRadius: 2,
-            pointHoverRadius: 4,
-            fill: true,
+            borderWidth: 1.5,
+            pointRadius: 1,
+            pointHoverRadius: 3,
+            fill: false,
           },
         ],
       },
@@ -707,19 +844,27 @@ export default function DataDetailPage() {
             <div>
               <h2>選手詳細</h2>
             </div>
-            <span className="panel-count">更新: {latest?.date || "-"}</span>
+            <span className="panel-count">更新: {activeRow?.date || "-"}</span>
           </div>
 
           <div style={styles.profileRow}>
             <div>
               <div style={styles.profileName}>{currentAthlete?.athlete_name || "-"}</div>
               <div style={styles.profileMetaRow}>
-                <span style={styles.profileBadge(isGk)}>{isGk ? "GK" : "FP"}</span>
+                <span style={styles.profileBadge(isGk)}>
+                  {isGk ? "ゴールキーパー" : "フィールド選手"}
+                </span>
                 <span>背番号: {currentAthlete?.jersey_number || "-"}</span>
                 <span>表記: {currentAthlete?.uniform_name || "-"}</span>
-                <span>ID: {currentAthlete?.athlete_id || "-"}</span>
+                <span>選手コード: {currentAthlete?.athlete_id || "-"}</span>
               </div>
             </div>
+            <Link
+              className="ghost-button"
+              to={`/matches/${currentAthlete?.athlete_id || ""}`}
+            >
+              試合日スタッツへ
+            </Link>
           </div>
 
           <section style={styles.section}>
@@ -727,21 +872,11 @@ export default function DataDetailPage() {
               <div>
                 <div style={styles.conditionHeroHeader}>
                   <span style={styles.conditionTitle}>コンディション判定</span>
-                  <span style={styles.conditionDate}>更新: {latest?.date || "-"}</span>
+                  <span style={styles.conditionDate}>更新: {activeRow?.date || "-"}</span>
                 </div>
                 <div style={styles.conditionLevel(riskLevel)}>{riskSummary.label}</div>
                 <p style={styles.conditionDesc}>{riskSummary.description}</p>
-                <div style={styles.reasonList}>
-                  {riskReasons.length > 0 ? (
-                    riskReasons.map((reason, index) => (
-                      <span key={`${reason}-${index}`} style={styles.reasonPill(riskLevel)}>
-                        {reason}
-                      </span>
-                    ))
-                  ) : (
-                    <span style={styles.reasonPillMuted}>特記事項なし</span>
-                  )}
-                </div>
+                {/* 特記事項は非表示 */}
               </div>
             </div>
           </section>
@@ -749,7 +884,7 @@ export default function DataDetailPage() {
           <section style={styles.section}>
             <SectionTitle title="判定に使用した値" />
             <div style={styles.decisionGrid}>
-              {decisionMetrics.map((metric) => {
+              {orderedDecisionMetrics.map((metric) => {
                 const gauge = buildGauge(metric);
                 const fillColor = metric.highlight
                   ? (riskPalette[riskLevel] || riskPalette.safety).accent
@@ -758,6 +893,7 @@ export default function DataDetailPage() {
                   <div key={metric.key} style={styles.metricCard(metric.highlight, riskLevel)}>
                     {metric.highlight && <span style={styles.metricTag(riskLevel)}>判定要因</span>}
                     <div style={styles.metricLabel}>{metric.label}</div>
+                    {metric.desc && <div style={styles.metricDesc}>{metric.desc}</div>}
                     <div style={styles.metricValueLarge}>
                       {formatMetricValue(metric.value, metric.digits, metric.unit)}
                     </div>
@@ -805,12 +941,12 @@ export default function DataDetailPage() {
           </section>
 
           <section style={styles.section}>
-            <SectionTitle title="主要指標の推移とレンジ (30日)" />
+            <SectionTitle title="判定指標の推移（30日）" />
             <div className="metric-charts-grid" style={styles.chartsGrid}>
-              {trendMetrics.map((metric) => {
+              {orderedTrendMetrics.map((metric) => {
                 const chart = buildMetricTrendChart(metric);
                 return (
-                  <div key={metric.key} style={styles.card}>
+                  <div key={metric.key} className="chart-card" style={styles.card}>
                     <div style={styles.chartTitle}>{metric.label}</div>
                     <div style={{ height: 200 }}>
                       <Chart type="line" data={chart.data} options={chart.options} />
@@ -818,9 +954,15 @@ export default function DataDetailPage() {
                   </div>
                 );
               })}
-              {summaryStats.map(({ metric, latestRow, range7, range28 }) => {
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <SectionTitle title="補助指標のレンジ（7日・28日）" />
+            <div className="metric-charts-grid" style={styles.chartsGrid}>
+              {orderedSummaryStats.map(({ metric, latestRow, range7, range28 }) => {
                 return (
-                  <div key={metric.key} style={styles.card}>
+                  <div key={metric.key} className="chart-card" style={styles.card}>
                     <div style={styles.metricLabel}>{metric.label}</div>
                     <div style={styles.metricValueLarge}>
                       {formatMetricValue(
@@ -838,19 +980,130 @@ export default function DataDetailPage() {
                         <span style={styles.rangeValue}>
                           {formatRange(range7, metric.digits || 2, metric.unit)}
                         </span>
-                        <span style={styles.rangeBadge}>{`n=${range7.count}`}</span>
+                        <span style={styles.rangeBadge}>{`${range7.count}件`}</span>
                       </div>
                       <div style={styles.rangeRow}>
                         <span style={styles.rangeLabel}>28日</span>
                         <span style={styles.rangeValue}>
                           {formatRange(range28, metric.digits || 2, metric.unit)}
                         </span>
-                        <span style={styles.rangeBadge}>{`n=${range28.count}`}</span>
+                        <span style={styles.rangeBadge}>{`${range28.count}件`}</span>
                       </div>
                     </div>
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <SectionTitle title="リスクカレンダー" />
+            <div className="calendar-panel">
+              <div className="calendar-header">
+                <button
+                  type="button"
+                  className="ghost-button calendar-nav"
+                  onClick={() =>
+                    setCalendarMonth((prev) => {
+                      const base = prev || calendarAnchor;
+                      return getMonthAnchor(
+                        new Date(base.getFullYear(), base.getMonth() - 1, 1)
+                      );
+                    })
+                  }
+                >
+                  前月
+                </button>
+                <div className="calendar-title">
+                  {formatMonthLabel(calendarAnchor)}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    className="ghost-button calendar-nav"
+                    onClick={() => setCalendarMonth(latestMonthAnchor)}
+                  >
+                    最新へ
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button calendar-nav"
+                    onClick={() =>
+                      setCalendarMonth((prev) => {
+                        const base = prev || calendarAnchor;
+                        return getMonthAnchor(
+                          new Date(base.getFullYear(), base.getMonth() + 1, 1)
+                        );
+                      })
+                    }
+                  >
+                    次月
+                  </button>
+                </div>
+              </div>
+              <div className="calendar-week">
+                {["日", "月", "火", "水", "木", "金", "土"].map((label) => (
+                  <span key={label}>{label}</span>
+                ))}
+              </div>
+              <p className="calendar-help">日付をクリックすると、その日の判定に切り替わります。</p>
+              <div className="calendar-grid">
+                {calendarCells.map((cell) => {
+                  const dateKey = formatDateKey(cell.date);
+                  const entry = calendarMap.get(dateKey);
+                  const risk = entry?.risk_level;
+                  const isSelected = selectedDate === dateKey;
+                  const hasData = Boolean(entry);
+                  const title =
+                    entry?.risk_reasons?.length
+                      ? entry.risk_reasons.join(" / ")
+                      : "データなし";
+                  return (
+                    <button
+                      type="button"
+                      key={dateKey}
+                      className={[
+                        "calendar-day",
+                        cell.isCurrentMonth ? "" : "calendar-day--muted",
+                        risk ? `calendar-day--${risk}` : "",
+                        isSelected ? "calendar-day--selected" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={() => {
+                        if (hasData) {
+                          setSelectedDate(dateKey);
+                          setCalendarMonth(getMonthAnchor(cell.date));
+                        }
+                      }}
+                      disabled={!hasData}
+                      title={title}
+                    >
+                      <span className="calendar-day__number">
+                        {cell.date.getDate()}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="calendar-legend">
+                <span className="calendar-legend__item">
+                  <span className="calendar-dot calendar-dot--risky" />
+                  Risky
+                </span>
+                <span className="calendar-legend__item">
+                  <span className="calendar-dot calendar-dot--caution" />
+                  Caution
+                </span>
+                <span className="calendar-legend__item">
+                  <span className="calendar-dot calendar-dot--safety" />
+                  Safety
+                </span>
+                <span className="calendar-legend__item">
+                  <span className="calendar-dot calendar-dot--none" />
+                  データなし
+                </span>
+              </div>
             </div>
           </section>
         </section>
@@ -887,7 +1140,63 @@ const toNumber = (value) =>
 const formatMetricValue = (value, digits = 2, unit = "") => {
   const base = formatNumber(value, digits);
   if (base === "-") return "-";
-  return unit ? `${base} ${unit}` : base;
+  return unit ? `${base}${unit}` : base;
+};
+
+const formatDateKey = (date) => {
+  if (!(date instanceof Date)) return "";
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateKey = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.valueOf()) ? null : parsed;
+};
+
+const normalizeDateKey = (value) => {
+  const parsed = parseDateKey(value);
+  return parsed ? formatDateKey(parsed) : "";
+};
+
+const getMonthAnchor = (date) => {
+  if (!date) return null;
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+};
+
+const buildCalendarCells = (anchorDate) => {
+  const monthStart = getMonthAnchor(anchorDate || new Date());
+  const start = new Date(monthStart);
+  start.setDate(start.getDate() - start.getDay());
+  const cells = [];
+  for (let i = 0; i < 42; i += 1) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    cells.push({
+      date,
+      isCurrentMonth: date.getMonth() === monthStart.getMonth(),
+    });
+  }
+  return cells;
+};
+
+const formatMonthLabel = (date) => {
+  if (!date) return "-";
+  return date.toLocaleString("ja-JP", { year: "numeric", month: "long" });
+};
+
+const formatDateLabel = (dateKey) => {
+  const parsed = parseDateKey(dateKey);
+  if (!parsed) return "-";
+  return parsed.toLocaleDateString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
 };
 
 const buildGauge = (metric) => {
@@ -912,7 +1221,34 @@ const buildGauge = (metric) => {
   };
 };
 
+const sortByOrder = (items, order, keySelector) => {
+  const orderMap = new Map(order.map((key, index) => [key, index]));
+  return [...items].sort((a, b) => {
+    const aKey = keySelector(a);
+    const bKey = keySelector(b);
+    const aIndex = orderMap.has(aKey) ? orderMap.get(aKey) : Number.MAX_SAFE_INTEGER;
+    const bIndex = orderMap.has(bKey) ? orderMap.get(bKey) : Number.MAX_SAFE_INTEGER;
+    return aIndex - bIndex;
+  });
+};
+
 const diveCount = (row) => {
   const m = row.metrics || {};
   return (m.dive_left_count || 0) + (m.dive_right_count || 0) + (m.dive_centre_count || 0);
+};
+
+const translateRiskReason = (reason) => {
+  if (!reason) return "";
+  return reason
+    .replace("HSR ACWR", "高強度走行ACWR")
+    .replace("High Decel ACWR", "急減速ACWR")
+    .replace("Load ACWR", "負荷ACWR")
+    .replace("Low Efficiency", "効率低下")
+    .replace("Efficiency Low", "効率低下")
+    .replace("Recovery Time", "起き上がり時間")
+    .replace("Dive ACWR", "ダイブACWR")
+    .replace("High Asymmetry", "左右差が大きい")
+    .replace("Asymmetry", "左右差")
+    .replace("High Monotony", "単調性が高い")
+    .replace("Monotony", "単調性");
 };

@@ -6,6 +6,8 @@ from .views import (
     WorkloadAthleteDetailView,
     WorkloadAthleteTimeseriesView,
     WorkloadUploadHistoryView,
+    WorkloadAthleteCalendarView,
+    WorkloadAthleteMatchStatsView,
 )
 
 urlpatterns = [
@@ -14,6 +16,8 @@ urlpatterns = [
     path('workload/athletes/<str:athlete_id>/', WorkloadAthleteDetailView.as_view(), name='workload-athlete-detail'),
     # 【ここを修正】フロントエンドに合わせてパスを変更
     path('workload/athletes/<str:athlete_id>/timeseries/', WorkloadAthleteTimeseriesView.as_view(), name='workload-timeseries'),
+    path('workload/athletes/<str:athlete_id>/calendar/', WorkloadAthleteCalendarView.as_view(), name='workload-calendar'),
+    path('workload/athletes/<str:athlete_id>/matches/', WorkloadAthleteMatchStatsView.as_view(), name='workload-matches'),
     path('workload/ingest/', WorkloadIngestionView.as_view(), name='workload-ingest'),
     path('workload/uploads/', WorkloadUploadHistoryView.as_view(), name='workload-uploads'),
     path('ingest/', WorkloadIngestionView.as_view(), name='ingest'),

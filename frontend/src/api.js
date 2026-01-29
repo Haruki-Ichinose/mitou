@@ -15,6 +15,16 @@ export async function fetchTimeseries(athleteId, params = {}) {
   return data;
 }
 
+export async function fetchAthleteCalendar(athleteId, params = {}) {
+  const { data } = await client.get(`/workload/athletes/${athleteId}/calendar/`, { params });
+  return data;
+}
+
+export async function fetchMatchStats(athleteId, params = {}) {
+  const { data } = await client.get(`/workload/athletes/${athleteId}/matches/`, { params });
+  return data;
+}
+
 export async function createAthleteProfile(payload) {
   const { data } = await client.post("/workload/athletes/", payload);
   return data;

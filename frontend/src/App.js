@@ -8,6 +8,7 @@ import DataListPage from "./pages/DataListPage";
 import DataDetailPage from "./pages/DataDetailPage";
 import DataRegisterPage from "./pages/DataRegisterPage";
 import PlayersPage from "./pages/PlayersPage";
+import MatchStatsPage from "./pages/MatchStatsPage";
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
         <Route path="/home" element={<HomePage />} />
         <Route path="/data" element={<DataListPage />} />
         <Route path="/data/:athleteId" element={<DataDetailPage />} />
+        <Route path="/matches/:athleteId" element={<MatchStatsPage />} />
         <Route path="/register" element={<DataRegisterPage />} />
         <Route path="/players" element={<PlayersPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
