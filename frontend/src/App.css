@@ -758,7 +758,7 @@
   inset: -40% -20% auto auto;
   width: 120%;
   height: 120%;
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.08), transparent 60%);
+  /* background: linear-gradient(135deg, rgba(15, 23, 42, 0.08), transparent 60%); */
   transform: rotate(-6deg);
   z-index: 0;
 }
@@ -770,7 +770,7 @@
   width: 48px;
   height: 6px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.28);
+  /* background: rgba(15, 23, 42, 0.28); */
   z-index: 0;
 }
 
@@ -791,18 +791,18 @@
   animation-delay: 0.2s;
 }
 
-.action-card:hover {
+/* .action-card:hover {
   transform: translateY(-6px);
   box-shadow: 0 24px 50px rgba(15, 23, 42, 0.2);
-}
+} */
 
 .action-card__title {
-  font-size: 2.2rem;
+  font-size: 3.3rem;
   font-weight: 800;
 }
 
 .action-card__meta {
-  font-size: 1.4rem;
+  font-size: 1.6rem;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.7);
 }
@@ -1270,7 +1270,7 @@
 
 .risk-section__header h3 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.75rem;
 }
 
 .risk-section__count {

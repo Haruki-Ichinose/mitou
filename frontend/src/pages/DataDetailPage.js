@@ -23,6 +23,12 @@ const theme = {
 };
 
 const riskPalette = {
+  pending: {
+    accent: "#64748b",
+    bg: "rgba(100, 116, 139, 0.16)",
+    border: "rgba(100, 116, 139, 0.35)",
+    text: "#475569",
+  },
   safety: {
     accent: "#16a34a",
     bg: "rgba(34, 197, 94, 0.12)",
@@ -44,6 +50,11 @@ const riskPalette = {
 };
 
 const riskText = {
+  pending: {
+    label: "Loading",
+    jp: "判定中",
+    description: "データを取得しています。しばらくお待ちください。",
+  },
   safety: {
     label: "Safety",
     jp: "安定",
@@ -99,8 +110,8 @@ const styles = {
     gap: 24,
     padding: 28,
     borderRadius: 24,
-    border: `1px solid ${(riskPalette[level] || riskPalette.safety).border}`,
-    background: `linear-gradient(135deg, ${(riskPalette[level] || riskPalette.safety).bg} 0%, rgba(255,255,255,0.9) 70%)`,
+    border: `1px solid ${(riskPalette[level] || riskPalette.pending).border}`,
+    background: `linear-gradient(135deg, ${(riskPalette[level] || riskPalette.pending).bg} 0%, rgba(255,255,255,0.9) 70%)`,
     boxShadow: theme.shadow,
   }),
   conditionHeroHeader: {
@@ -126,7 +137,7 @@ const styles = {
   conditionLevel: (level) => ({
     fontSize: 40,
     fontWeight: 900,
-    color: (riskPalette[level] || riskPalette.safety).text,
+    color: (riskPalette[level] || riskPalette.pending).text,
     letterSpacing: "-0.02em",
     marginBottom: 8,
   }),
@@ -146,9 +157,9 @@ const styles = {
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 700,
-    border: `1px solid ${(riskPalette[level] || riskPalette.safety).border}`,
-    background: (riskPalette[level] || riskPalette.safety).bg,
-    color: (riskPalette[level] || riskPalette.safety).text,
+    border: `1px solid ${(riskPalette[level] || riskPalette.pending).border}`,
+    background: (riskPalette[level] || riskPalette.pending).bg,
+    color: (riskPalette[level] || riskPalette.pending).text,
   }),
   reasonPillMuted: {
     padding: "8px 12px",
@@ -190,11 +201,11 @@ const styles = {
     borderRadius: 16,
     padding: 16,
     border: `1px solid ${
-      highlight ? (riskPalette[level] || riskPalette.safety).accent : theme.border
+      highlight ? (riskPalette[level] || riskPalette.pending).accent : theme.border
     }`,
     boxShadow: highlight ? "0 12px 24px rgba(0,0,0,0.08)" : theme.shadow,
     borderLeft: highlight
-      ? `6px solid ${(riskPalette[level] || riskPalette.safety).accent}`
+      ? `6px solid ${(riskPalette[level] || riskPalette.pending).accent}`
       : `1px solid ${theme.border}`,
   }),
   metricTag: (level) => ({
@@ -205,7 +216,7 @@ const styles = {
     borderRadius: 999,
     fontSize: 11,
     fontWeight: 800,
-    background: (riskPalette[level] || riskPalette.safety).accent,
+    background: (riskPalette[level] || riskPalette.pending).accent,
     color: "#fff",
   }),
   metricValueLarge: {
@@ -420,11 +431,11 @@ export default function DataDetailPage() {
     [selectedRow, viewRows]
   );
   const latestWorkload = activeRow?.workload || {};
-  const riskLevel = latestWorkload.risk_level || "safety";
+  const riskLevel = latestWorkload.risk_level || "pending";
   const riskReasons = (latestWorkload.risk_reasons || []).map((reason) =>
     translateRiskReason(reason)
   );
-  const riskSummary = riskText[riskLevel] || riskText.safety;
+  const riskSummary = riskText[riskLevel] || riskText.pending;
   const metricOrder = useMemo(
     () =>
       isGk
@@ -887,7 +898,7 @@ export default function DataDetailPage() {
               {orderedDecisionMetrics.map((metric) => {
                 const gauge = buildGauge(metric);
                 const fillColor = metric.highlight
-                  ? (riskPalette[riskLevel] || riskPalette.safety).accent
+                  ? (riskPalette[riskLevel] || riskPalette.pending).accent
                   : "#94a3b8";
                 return (
                   <div key={metric.key} style={styles.metricCard(metric.highlight, riskLevel)}>
